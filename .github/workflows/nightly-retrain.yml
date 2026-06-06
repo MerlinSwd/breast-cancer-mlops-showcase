@@ -9,9 +9,9 @@ jobs:
   retrain:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Sync environment
@@ -27,7 +27,7 @@ jobs:
           latest_run=$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
           uv run bc-mlops report --run-dir "$latest_run" --output "$latest_run/MODEL_CARD.md"
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nightly-training-artifacts
           path: |
