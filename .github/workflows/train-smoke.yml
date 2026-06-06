@@ -13,9 +13,9 @@ jobs:
   train:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: astral-sh/setup-uv@v3
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@v6
+      - uses: astral-sh/setup-uv@v8.2.0
+      - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
       - name: Sync environment
@@ -25,7 +25,7 @@ jobs:
       - name: Train pytorch baseline
         run: uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: training-artifacts
           path: |
