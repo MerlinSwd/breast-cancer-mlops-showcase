@@ -5,17 +5,15 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-import joblib
 import pandas as pd
 import yaml
-from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.pipeline import Pipeline
-from sklearn.preprocessing import StandardScaler
 
 from .config import TrainingConfig, config_to_dict
 from .data import load_dataset
+from .modeling import train_backend
+from .tracking import fail_training_run, finish_training_run, start_training_run
 
 
 @dataclass(slots=True)
@@ -32,22 +30,6 @@ class TrainingResult:
             "metrics_path": str(self.metrics_path),
             "metadata_path": str(self.metadata_path),
         }
-
-
-def _build_pipeline(config: TrainingConfig) -> Pipeline:
-    return Pipeline(
-        steps=[
-            ("scaler", StandardScaler()),
-            (
-                "classifier",
-                LogisticRegression(
-                    C=config.model.c,
-                    max_iter=config.model.max_iter,
-                    random_state=config.random_seed,
-                ),
-            ),
-        ]
-    )
 
 
 def _timestamp() -> str:
@@ -77,6 +59,8 @@ def _write_registry(
             "roc_auc": metrics["roc_auc"],
             "experiment_name": metadata["experiment_name"],
             "timestamp": metadata["timestamp"],
+            "model_kind": metadata["model"]["kind"],
+            "mlflow_run_id": metadata["mlflow"]["run_id"],
         }
     )
     payload["best_run"] = max(payload["runs"], key=lambda run: (run["f1"], run["roc_auc"]))
@@ -94,56 +78,68 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
         stratify=dataset.target if config.split.stratify else None,
     )
 
-    model = _build_pipeline(config)
-    model.fit(X_train, y_train)
-
-    probabilities = pd.Series(model.predict_proba(X_test)[:, 1])
-    predictions = _positive_predictions(probabilities, config.threshold)
-
-    metrics = {
-        "accuracy": round(float(accuracy_score(y_test, predictions)), 4),
-        "precision": round(float(precision_score(y_test, predictions)), 4),
-        "recall": round(float(recall_score(y_test, predictions)), 4),
-        "f1": round(float(f1_score(y_test, predictions)), 4),
-        "roc_auc": round(float(roc_auc_score(y_test, probabilities)), 4),
-        "positive_rate": round(float(predictions.mean()), 4),
-    }
-
     run_name = f"{config.experiment_name}-{_timestamp()}"
     run_dir = output_root / run_name
     run_dir.mkdir(parents=True, exist_ok=True)
 
-    model_path = run_dir / "model.joblib"
+    model_path: Path | None = None
     metrics_path = run_dir / "metrics.json"
     metadata_path = run_dir / "metadata.json"
-    coefficients_path = run_dir / "feature_importance.csv"
     config_path = run_dir / "config.resolved.yaml"
+    feature_importance_path = run_dir / "feature_importance.csv"
 
-    joblib.dump(model, model_path)
-    metrics_path.write_text(json.dumps(metrics, indent=2))
+    tracking = start_training_run(config)
+    try:
+        backend = train_backend(config=config, X_train=X_train, y_train=y_train)
+        probabilities = pd.Series(backend.predict_probabilities(X_test))
+        predictions = _positive_predictions(probabilities, config.threshold)
 
-    coefficients = pd.DataFrame(
-        {
-            "feature": dataset.features.columns,
-            "coefficient": model.named_steps["classifier"].coef_[0],
+        metrics = {
+            "accuracy": round(float(accuracy_score(y_test, predictions)), 4),
+            "precision": round(float(precision_score(y_test, predictions)), 4),
+            "recall": round(float(recall_score(y_test, predictions)), 4),
+            "f1": round(float(f1_score(y_test, predictions)), 4),
+            "roc_auc": round(float(roc_auc_score(y_test, probabilities)), 4),
+            "positive_rate": round(float(predictions.mean()), 4),
         }
-    ).sort_values("coefficient", ascending=False)
-    coefficients.to_csv(coefficients_path, index=False)
 
-    metadata = {
-        "experiment_name": config.experiment_name,
-        "timestamp": _timestamp(),
-        "train_rows": len(X_train),
-        "test_rows": len(X_test),
-        "config": config_to_dict(config),
-    }
-    metadata_path.write_text(json.dumps(metadata, indent=2))
-    config_path.write_text(yaml.safe_dump(config_to_dict(config), sort_keys=False))
+        model_path = run_dir / backend.artifact_filename
+        backend.save(model_path)
+        metrics_path.write_text(json.dumps(metrics, indent=2))
+        if backend.feature_importance is not None:
+            backend.feature_importance.to_csv(feature_importance_path, index=False)
 
-    _write_registry(output_root, run_name, metrics, metadata)
-    return TrainingResult(
-        run_dir=run_dir,
-        model_path=model_path,
-        metrics_path=metrics_path,
-        metadata_path=metadata_path,
-    )
+        metadata = {
+            "experiment_name": config.experiment_name,
+            "timestamp": _timestamp(),
+            "train_rows": len(X_train),
+            "test_rows": len(X_test),
+            "target_name": dataset.target_name,
+            "config": config_to_dict(config),
+            "model": {
+                "kind": backend.kind,
+                "artifact": model_path.name,
+                "runtime": backend.runtime,
+            },
+            "mlflow": {
+                "experiment_id": tracking.experiment_id,
+                "tracking_uri": tracking.tracking_uri,
+                "artifact_root": tracking.artifact_root,
+                "run_name": tracking.run.info.run_name,
+            },
+        }
+        metadata_path.write_text(json.dumps(metadata, indent=2))
+        config_path.write_text(yaml.safe_dump(config_to_dict(config), sort_keys=False))
+        mlflow_info = finish_training_run(metrics=metrics, run_dir=run_dir)
+        metadata["mlflow"].update(mlflow_info)
+        metadata_path.write_text(json.dumps(metadata, indent=2))
+        _write_registry(output_root, run_name, metrics, metadata)
+        return TrainingResult(
+            run_dir=run_dir,
+            model_path=model_path,
+            metrics_path=metrics_path,
+            metadata_path=metadata_path,
+        )
+    except Exception:
+        fail_training_run()
+        raise

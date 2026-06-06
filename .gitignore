@@ -9,3 +9,4 @@ build/
 *.egg-info/
 artifacts/runs/
 artifacts/registry.json
+mlruns/

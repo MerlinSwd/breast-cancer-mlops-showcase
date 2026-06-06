@@ -12,9 +12,15 @@ random_seed: 17
 split:
   test_size: 0.25
   stratify: true
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
 model:
-  c: 0.5
-  max_iter: 300
+  kind: sklearn_logreg
+  device: cpu
+  params:
+    c: 0.5
+    max_iter: 300
 threshold: 0.42
 """.strip()
     )
@@ -25,5 +31,8 @@ threshold: 0.42
     assert config.experiment_name == "unit-test"
     assert config.random_seed == 17
     assert config.split.test_size == 0.25
-    assert config.model.c == 0.5
+    assert config.tracking.uri == "./mlruns-tests"
+    assert config.model.kind == "sklearn_logreg"
+    assert config.model.device == "cpu"
+    assert config.model.params["c"] == 0.5
     assert config.threshold == 0.42

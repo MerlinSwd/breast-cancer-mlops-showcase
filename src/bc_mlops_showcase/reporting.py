@@ -9,6 +9,8 @@ def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
     metrics = json.loads((run_path / "metrics.json").read_text())
     metadata = json.loads((run_path / "metadata.json").read_text())
 
+    model_kind = metadata["model"]["kind"]
+    runtime = metadata["model"]["runtime"]
     lines = [
         "# Model Card",
         "",
@@ -17,6 +19,8 @@ def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
         f"- Timestamp: {metadata['timestamp']}",
         f"- Train rows: {metadata['train_rows']}",
         f"- Test rows: {metadata['test_rows']}",
+        f"- Model kind: {model_kind}",
+        f"- Runtime: {runtime['framework']} on {runtime['device']}",
         "",
         "## Metrics",
         f"- Accuracy: {metrics['accuracy']}",
@@ -25,10 +29,16 @@ def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
         f"- F1: {metrics['f1']}",
         f"- ROC AUC: {metrics['roc_auc']}",
         "",
+        "## Tracking",
+        f"- MLflow experiment: {metadata['config']['tracking']['experiment_name']}",
+        f"- MLflow run id: {metadata['mlflow']['run_id']}",
+        f"- Tracking URI: {metadata['mlflow']['tracking_uri']}",
+        "",
         "## Notes",
-        "- Model family: StandardScaler + LogisticRegression",
         "- Problem type: binary classification",
         f"- Positive class probability threshold: {metadata['config']['threshold']}",
+        "- Architecture is backend-driven: CLI and pipeline stay stable while model kinds",
+        "  swap through config.",
         "",
     ]
 

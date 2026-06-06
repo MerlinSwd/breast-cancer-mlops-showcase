@@ -4,6 +4,12 @@ threshold: 0.5
 split:
   test_size: 0.2
   stratify: true
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
 model:
-  c: 1.0
-  max_iter: 500
+  kind: sklearn_logreg
+  device: cpu
+  params:
+    c: 1.0
+    max_iter: 500

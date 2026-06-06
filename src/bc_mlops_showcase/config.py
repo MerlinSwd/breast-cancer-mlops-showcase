@@ -1,10 +1,26 @@
 from __future__ import annotations
 
+from copy import deepcopy
 from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
+
+DEFAULT_MODEL_KIND = "sklearn_logreg"
+DEFAULT_MODEL_PARAMS: dict[str, dict[str, Any]] = {
+    "sklearn_logreg": {
+        "c": 1.0,
+        "max_iter": 500,
+    },
+    "pytorch_mlp": {
+        "hidden_dims": [32, 16],
+        "epochs": 20,
+        "batch_size": 32,
+        "learning_rate": 0.01,
+        "dropout": 0.1,
+    },
+}
 
 
 @dataclass(slots=True)
@@ -14,9 +30,18 @@ class SplitConfig:
 
 
 @dataclass(slots=True)
+class TrackingConfig:
+    uri: str = "./mlruns"
+    experiment_name: str = "bc-mlops-showcase"
+
+
+@dataclass(slots=True)
 class ModelConfig:
-    c: float = 1.0
-    max_iter: int = 500
+    kind: str = DEFAULT_MODEL_KIND
+    device: str = "auto"
+    params: dict[str, Any] = field(
+        default_factory=lambda: deepcopy(DEFAULT_MODEL_PARAMS[DEFAULT_MODEL_KIND])
+    )
 
 
 @dataclass(slots=True)
@@ -25,6 +50,7 @@ class TrainingConfig:
     random_seed: int = 42
     threshold: float = 0.5
     split: SplitConfig = field(default_factory=SplitConfig)
+    tracking: TrackingConfig = field(default_factory=TrackingConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
 
 
@@ -33,17 +59,37 @@ def _merge_dataclass(default: Any, values: dict[str, Any] | None) -> Any:
     return type(default)(**{**asdict(default), **data})
 
 
+def _resolve_model_config(values: dict[str, Any] | None) -> ModelConfig:
+    raw = values or {}
+    kind = raw.get("kind", DEFAULT_MODEL_KIND)
+    if kind not in DEFAULT_MODEL_PARAMS:
+        raise ValueError(f"unsupported model kind: {kind}")
+
+    base_params = deepcopy(DEFAULT_MODEL_PARAMS[kind])
+    base_params.update(raw.get("params", {}))
+    return ModelConfig(
+        kind=kind,
+        device=raw.get("device", "auto"),
+        params=base_params,
+    )
+
+
 def load_training_config(path: str | Path) -> TrainingConfig:
     config_path = Path(path)
     raw = yaml.safe_load(config_path.read_text()) or {}
 
     default = TrainingConfig()
+    model = _resolve_model_config(raw.get("model"))
+    experiment_name = raw.get("experiment_name") or (
+        "baseline-logreg" if model.kind == "sklearn_logreg" else "baseline-pytorch-mlp"
+    )
     return TrainingConfig(
-        experiment_name=raw.get("experiment_name", default.experiment_name),
+        experiment_name=experiment_name,
         random_seed=raw.get("random_seed", default.random_seed),
         threshold=raw.get("threshold", default.threshold),
         split=_merge_dataclass(default.split, raw.get("split")),
-        model=_merge_dataclass(default.model, raw.get("model")),
+        tracking=_merge_dataclass(default.tracking, raw.get("tracking")),
+        model=model,
     )
 
 
@@ -56,8 +102,13 @@ def config_to_dict(config: TrainingConfig) -> dict[str, Any]:
             "test_size": config.split.test_size,
             "stratify": config.split.stratify,
         },
+        "tracking": {
+            "uri": config.tracking.uri,
+            "experiment_name": config.tracking.experiment_name,
+        },
         "model": {
-            "c": config.model.c,
-            "max_iter": config.model.max_iter,
+            "kind": config.model.kind,
+            "device": config.model.device,
+            "params": deepcopy(config.model.params),
         },
     }
