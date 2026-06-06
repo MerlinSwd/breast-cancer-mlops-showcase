@@ -1,0 +1,3 @@
+min_accuracy: 0.90
+min_f1: 0.90
+min_roc_auc: 0.95
