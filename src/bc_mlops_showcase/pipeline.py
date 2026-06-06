@@ -1,3 +1,5 @@
+"""Training orchestration for the end-to-end MLOps workflow."""
+
 from __future__ import annotations
 
 import json
@@ -18,12 +20,16 @@ from .tracking import fail_training_run, finish_training_run, start_training_run
 
 @dataclass(slots=True)
 class TrainingResult:
+    """Paths to the primary artifacts produced by a training run."""
+
     run_dir: Path
     model_path: Path
     metrics_path: Path
     metadata_path: Path
 
     def summary(self) -> dict[str, str]:
+        """Return a JSON-serializable view of the result paths."""
+
         return {
             "run_dir": str(self.run_dir),
             "model_path": str(self.model_path),
@@ -69,6 +75,8 @@ def _write_registry(
 
 
 def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingResult:
+    """Train the configured backend, evaluate it, and persist run artifacts."""
+
     dataset = load_dataset()
     X_train, X_test, y_train, y_test = train_test_split(
         dataset.features,

@@ -1,3 +1,5 @@
+"""Model backend implementations and artifact loading helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -19,6 +21,8 @@ from .config import TrainingConfig
 
 @dataclass(slots=True)
 class BackendTrainingBundle:
+    """In-memory training result plus serialization metadata for a backend."""
+
     kind: str
     artifact_filename: str
     feature_names: list[str]
@@ -28,6 +32,8 @@ class BackendTrainingBundle:
     _serializer_payload: Any
 
     def save(self, destination: Path) -> None:
+        """Persist the trained backend artifact to disk."""
+
         destination.parent.mkdir(parents=True, exist_ok=True)
         if destination.suffix == ".joblib":
             joblib.dump(self._serializer_payload, destination)
@@ -35,6 +41,8 @@ class BackendTrainingBundle:
         torch.save(self._serializer_payload, destination)
 
     def predict_probabilities(self, records: pd.DataFrame) -> np.ndarray:
+        """Predict positive-class probabilities for input records."""
+
         if self.kind == "sklearn_logreg":
             return self._predictor.predict_proba(records[self.feature_names])[:, 1]
         return _predict_pytorch_checkpoint(
@@ -44,6 +52,8 @@ class BackendTrainingBundle:
 
 
 class BinaryMLP(nn.Module):
+    """Simple feed-forward neural network for binary tabular classification."""
+
     def __init__(self, input_dim: int, hidden_dims: list[int], dropout: float) -> None:
         super().__init__()
         layers: list[nn.Module] = []
@@ -62,6 +72,8 @@ class BinaryMLP(nn.Module):
 
 
 def resolve_device(device_preference: str) -> str:
+    """Resolve ``auto`` to CUDA when available, otherwise fall back to CPU."""
+
     if device_preference == "auto":
         return "cuda" if torch.cuda.is_available() else "cpu"
     return device_preference
@@ -184,6 +196,8 @@ def train_backend(
     X_train: pd.DataFrame,
     y_train: pd.Series,
 ) -> BackendTrainingBundle:
+    """Train the backend selected by ``config.model.kind``."""
+
     if config.model.kind == "sklearn_logreg":
         return _train_sklearn_model(config=config, X_train=X_train, y_train=y_train)
     if config.model.kind == "pytorch_mlp":
@@ -212,6 +226,8 @@ def _predict_pytorch_checkpoint(checkpoint: dict[str, Any], records: pd.DataFram
 
 
 def predict_probabilities_from_path(model_path: str | Path, records: pd.DataFrame) -> np.ndarray:
+    """Load a saved backend artifact and score the provided records."""
+
     path = Path(model_path)
     if path.suffix == ".joblib":
         model = joblib.load(path)

@@ -1,3 +1,5 @@
+"""Quality gate validation for persisted model metrics."""
+
 from __future__ import annotations
 
 import json
@@ -13,6 +15,8 @@ METRIC_FIELDS = {
 
 
 def validate_metrics(metrics_path: str | Path, gates_path: str | Path) -> dict[str, object]:
+    """Check a metrics file against configured minimum thresholds."""
+
     metrics = json.loads(Path(metrics_path).read_text())
     gates = yaml.safe_load(Path(gates_path).read_text()) or {}
 

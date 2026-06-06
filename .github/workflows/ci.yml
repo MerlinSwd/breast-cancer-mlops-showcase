@@ -23,6 +23,6 @@ jobs:
       - name: Format check
         run: uv run ruff format --check .
       - name: Test
-        run: uv run pytest
+        run: uv run python -m pytest
       - name: Build package
         run: uv run python -m build

@@ -23,7 +23,7 @@ A private end-to-end Python project demonstrating a realistic ML workflow on the
 
 ```bash
 uv sync --extra dev
-uv run pytest
+uv run python -m pytest
 uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 uv run bc-mlops compare --registry artifacts/registry.json

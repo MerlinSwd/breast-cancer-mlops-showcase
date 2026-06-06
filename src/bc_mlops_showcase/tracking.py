@@ -1,3 +1,5 @@
+"""MLflow tracking bootstrap and run lifecycle helpers."""
+
 from __future__ import annotations
 
 from dataclasses import dataclass
@@ -12,6 +14,8 @@ from .config import TrainingConfig, config_to_dict
 
 @dataclass(slots=True)
 class TrackingContext:
+    """Resolved MLflow state for an active training run."""
+
     run: Any
     tracking_uri: str
     artifact_root: str
@@ -30,6 +34,8 @@ def _flatten_dict(payload: dict[str, Any], prefix: str = "") -> dict[str, Any]:
 
 
 def resolve_tracking_backend(uri: str) -> tuple[str, str]:
+    """Resolve a user-facing tracking URI into MLflow DB and artifact locations."""
+
     if "://" in uri:
         return uri, uri
 
@@ -49,6 +55,8 @@ def _resolve_experiment_id(client: MlflowClient, experiment_name: str, artifact_
 
 
 def start_training_run(config: TrainingConfig) -> TrackingContext:
+    """Create and tag an MLflow run for the given training configuration."""
+
     tracking_uri, artifact_root = resolve_tracking_backend(config.tracking.uri)
     mlflow.set_tracking_uri(tracking_uri)
     client = MlflowClient(tracking_uri=tracking_uri)
@@ -78,6 +86,8 @@ def finish_training_run(
     metrics: dict[str, float],
     run_dir: Path,
 ) -> dict[str, str]:
+    """Log final metrics and artifacts, then close the active MLflow run."""
+
     active_run = mlflow.active_run()
     if active_run is None:
         raise RuntimeError("mlflow run is not active")
@@ -93,5 +103,7 @@ def finish_training_run(
 
 
 def fail_training_run() -> None:
+    """Mark the active MLflow run as failed when an exception aborts training."""
+
     if mlflow.active_run() is not None:
         mlflow.end_run(status="FAILED")
