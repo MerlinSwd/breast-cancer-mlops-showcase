@@ -11,6 +11,12 @@ from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
+from textual.app import App, ComposeResult
+from textual.containers import Horizontal, Vertical
+from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+
+SORT_KEYS = ("f1", "accuracy", "roc_auc", "run_name")
+DEFAULT_SORT_KEY = "f1"
 
 
 @dataclass(slots=True)
@@ -33,8 +39,277 @@ class DashboardSummary:
     artifact_statuses: list[RunArtifactStatus]
 
 
+@dataclass(slots=True)
+class DashboardRunView:
+    """Flattened run information for leaderboard and interactive widgets."""
+
+    run_name: str
+    model_kind: str
+    accuracy: str
+    f1: str
+    roc_auc: str
+    model_status: str
+    metrics_status: str
+    card_status: str
+    issue_count: int
+
+
 BRAND_TITLE = "MERLIN // ONCO-OPS COMMAND DECK"
 BRAND_TAGLINE = "A slightly dramatic bridge view for breast-cancer MLOps runs."
+
+
+class MerlinDashboardApp(App[None]):
+    """Interactive Textual dashboard for exploring tracked runs."""
+
+    CSS = """
+    Screen {
+        layout: vertical;
+    }
+
+    #logo {
+        height: auto;
+        padding: 1 2;
+        content-align: center middle;
+        color: magenta;
+        background: rgb(20, 7, 35);
+        border: heavy rgb(167, 139, 250);
+        margin: 0 1;
+    }
+
+    #run-filter {
+        margin: 1 1 0 1;
+    }
+
+    #main-grid {
+        height: 1fr;
+        margin: 1;
+    }
+
+    #sidebar {
+        width: 1fr;
+        height: 1fr;
+        border: round rgb(59, 130, 246);
+        padding: 0 1;
+        margin-right: 1;
+    }
+
+    #inspector-pane {
+        width: 1fr;
+        height: 1fr;
+    }
+
+    #overview, #details-pane {
+        height: 1fr;
+        border: round rgb(59, 130, 246);
+        padding: 0 1;
+    }
+
+    #overview {
+        margin-bottom: 1;
+    }
+
+    .section-title {
+        text-style: bold;
+        color: cyan;
+        margin-bottom: 1;
+    }
+
+    #run-list {
+        height: 1fr;
+    }
+
+    #run-details {
+        height: 1fr;
+        padding: 0 1;
+    }
+
+    #status-bar {
+        height: auto;
+        padding: 0 2 1 2;
+        color: yellow;
+    }
+    """
+
+    BINDINGS = [
+        ("q", "quit", "Quit"),
+        ("r", "reload", "Reload"),
+        ("slash", "focus_filter", "Filter"),
+        ("s", "cycle_sort", "Sort"),
+        ("h", "toggle_health_filter", "Health"),
+    ]
+
+    def __init__(self, registry_path: Path, run_root: Path) -> None:
+        super().__init__()
+        self.registry_path = registry_path
+        self.run_root = run_root
+        self.summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
+        self.sort_key = DEFAULT_SORT_KEY
+        self.unhealthy_only = False
+        self.selected_run_name = _default_selected_run_name(self.summary)
+        self._is_refreshing_list = False
+
+    def compose(self) -> ComposeResult:
+        yield Header(show_clock=False)
+        yield Static(render_merlin_logo(), id="logo")
+        yield Input(placeholder="Filter runs by name or model kind...", id="run-filter")
+        with Horizontal(id="main-grid"):
+            with Vertical(id="sidebar"):
+                yield Static("Tracked Runs", classes="section-title")
+                yield ListView(id="run-list")
+            with Vertical(id="inspector-pane"):
+                yield Static("", id="overview")
+                with Vertical(id="details-pane"):
+                    yield Static("Run Details", classes="section-title")
+                    yield Static("", id="run-details")
+        yield Static("", id="status-bar")
+        yield Footer()
+
+    def on_mount(self) -> None:
+        self._refresh_view(query="")
+        self.query_one("#run-list", ListView).focus()
+        self._refresh_status("Ready. / filter • s sort • h unhealthy-only • r reload • q quit.")
+
+    def action_focus_filter(self) -> None:
+        self.query_one("#run-filter", Input).focus()
+
+    def action_cycle_sort(self) -> None:
+        current_index = SORT_KEYS.index(self.sort_key)
+        self.sort_key = SORT_KEYS[(current_index + 1) % len(SORT_KEYS)]
+        self.selected_run_name = None
+        self._refresh_view(query=self._current_query())
+        visible_runs = self._current_visible_runs()
+        if visible_runs:
+            self.selected_run_name = visible_runs[0].run_name
+            self._refresh_details()
+            self._refresh_overview()
+        self._refresh_status(f"Sort set to {self.sort_key}.")
+
+    def action_toggle_health_filter(self) -> None:
+        self.unhealthy_only = not self.unhealthy_only
+        self.selected_run_name = None
+        self._refresh_view(query=self._current_query())
+        visible_runs = self._current_visible_runs()
+        if visible_runs:
+            self.selected_run_name = visible_runs[0].run_name
+            self._refresh_details()
+            self._refresh_overview()
+        filter_state = "unhealthy only" if self.unhealthy_only else "all runs"
+        self._refresh_status(f"Health filter set to {filter_state}.")
+
+    def action_reload(self) -> None:
+        self.summary = load_dashboard_summary(
+            registry_path=self.registry_path,
+            run_root=self.run_root,
+        )
+        self._refresh_view(query=self._current_query())
+        self._refresh_status(f"Reloaded registry from {self.registry_path}")
+
+    def on_input_changed(self, event: Input.Changed) -> None:
+        if event.input.id != "run-filter":
+            return
+        self._refresh_view(query=event.value)
+
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "run-filter":
+            return
+        self._refresh_view(query=event.value)
+
+    def on_list_view_selected(self, event: ListView.Selected) -> None:
+        del event
+        if self._is_refreshing_list:
+            return
+        self._sync_selected_from_list()
+
+    def on_list_view_highlighted(self, event: ListView.Highlighted) -> None:
+        del event
+        if self._is_refreshing_list:
+            return
+        self._sync_selected_from_list()
+
+    def _current_query(self) -> str:
+        return self.query_one("#run-filter", Input).value
+
+    def _current_visible_runs(self) -> list[DashboardRunView]:
+        return select_run_views(
+            self.summary,
+            query=self._current_query(),
+            sort_key=self.sort_key,
+            unhealthy_only=self.unhealthy_only,
+        )
+
+    def _refresh_view(self, query: str) -> None:
+        self._refresh_list(query=query)
+        self._refresh_details()
+        self._refresh_overview()
+
+    def _refresh_list(self, query: str) -> None:
+        run_list = self.query_one("#run-list", ListView)
+        run_views = select_run_views(
+            self.summary,
+            query=query,
+            sort_key=self.sort_key,
+            unhealthy_only=self.unhealthy_only,
+        )
+
+        self._is_refreshing_list = True
+        run_list.clear()
+        if not run_views:
+            self.selected_run_name = None
+            run_list.append(ListItem(Label("No runs match that filter."), name=""))
+            self._is_refreshing_list = False
+            return
+
+        selected_name = self.selected_run_name
+        visible_run_names = {run.run_name for run in run_views}
+        if selected_name not in visible_run_names:
+            selected_name = run_views[0].run_name
+
+        selected_index = 0
+        for index, run_view in enumerate(run_views):
+            issue_marker = f" · issues={run_view.issue_count}" if run_view.issue_count else ""
+            label = f"{run_view.run_name} [{run_view.model_kind}] F1={run_view.f1}{issue_marker}"
+            run_list.append(ListItem(Label(label), name=run_view.run_name))
+            if run_view.run_name == selected_name:
+                selected_index = index
+
+        run_list.index = selected_index
+        self.selected_run_name = run_views[selected_index].run_name
+        self._is_refreshing_list = False
+
+    def _refresh_overview(self) -> None:
+        overview = self.query_one("#overview", Static)
+        overview.update(
+            build_overview_text(
+                self.summary,
+                self._current_visible_runs(),
+                sort_key=self.sort_key,
+                unhealthy_only=self.unhealthy_only,
+                query=self._current_query(),
+            )
+        )
+
+    def _sync_selected_from_list(self) -> None:
+        run_list = self.query_one("#run-list", ListView)
+        if run_list.index is None:
+            return
+        if not (0 <= run_list.index < len(run_list.children)):
+            return
+        item = run_list.children[run_list.index]
+        if not getattr(item, "name", None):
+            return
+        self.selected_run_name = item.name
+        self._refresh_details()
+        self._refresh_overview()
+
+    def _refresh_details(self) -> None:
+        details = self.query_one("#run-details", Static)
+        if not self._current_visible_runs():
+            details.update("No runs match that filter. Clear it or reload with r.")
+            return
+        details.update(build_run_detail_text(self.summary, self.selected_run_name))
+
+    def _refresh_status(self, message: str) -> None:
+        self.query_one("#status-bar", Static).update(message)
 
 
 def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSummary:
@@ -44,8 +319,8 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
     if registry_path.exists():
         payload = _safe_json_file(registry_path, default=payload)
 
-    runs = list(payload.get("runs", []))
-    best_run = payload.get("best_run")
+    runs = _normalize_runs(payload.get("runs", []))
+    best_run = _normalize_run(payload.get("best_run"))
     if best_run is None and runs:
         best_run = max(
             runs,
@@ -75,9 +350,181 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
 
     runs = enriched_runs
     if best_run is not None:
-        best_run = next((run for run in runs if run["run_name"] == best_run["run_name"]), best_run)
+        best_run = next(
+            (run for run in runs if run["run_name"] == best_run["run_name"]),
+            best_run,
+        )
 
     return DashboardSummary(runs=runs, best_run=best_run, artifact_statuses=artifact_statuses)
+
+
+def render_merlin_logo() -> str:
+    """Return the reusable Merlin-themed text logo for terminal views."""
+
+    return (
+        "        /\\\n"
+        "   /\\  /  \\\n"
+        "  /__\\/ /\\ \\\n"
+        " /\\  / ____  \\\n"
+        "/__\\/_/    \\_\\   MERLIN\n"
+        "   ✦   ONCO-OPS Command Deck   ✦"
+    )
+
+
+def _default_selected_run_name(summary: DashboardSummary) -> str | None:
+    if summary.best_run is not None:
+        return str(summary.best_run["run_name"])
+    if summary.runs:
+        return str(summary.runs[0]["run_name"])
+    return None
+
+
+def _artifact_status_by_run(summary: DashboardSummary) -> dict[str, RunArtifactStatus]:
+    return {status.run_name: status for status in summary.artifact_statuses}
+
+
+def _artifact_issue_count(status: RunArtifactStatus) -> int:
+    return sum(
+        not value.startswith("OK:")
+        for value in (status.model_status, status.metrics_status, status.card_status)
+    )
+
+
+def build_run_views(summary: DashboardSummary) -> list[DashboardRunView]:
+    """Join registry rows with artifact health for rendering and selection."""
+
+    statuses = _artifact_status_by_run(summary)
+    views: list[DashboardRunView] = []
+    for run in summary.runs:
+        run_name = str(run["run_name"])
+        status = statuses.get(
+            run_name,
+            RunArtifactStatus(
+                run_name=run_name,
+                model_kind=str(run.get("model_kind", "unknown")),
+                model_status="model artifact missing",
+                metrics_status="metrics.json missing",
+                card_status="MODEL_CARD missing",
+            ),
+        )
+        issue_count = _artifact_issue_count(status)
+        views.append(
+            DashboardRunView(
+                run_name=run_name,
+                model_kind=str(run.get("model_kind", "unknown")),
+                accuracy=_format_metric(run, "accuracy"),
+                f1=_format_metric(run, "f1"),
+                roc_auc=_format_metric(run, "roc_auc"),
+                model_status=status.model_status,
+                metrics_status=status.metrics_status,
+                card_status=status.card_status,
+                issue_count=issue_count,
+            )
+        )
+    return views
+
+
+def select_run_views(
+    summary: DashboardSummary,
+    *,
+    query: str,
+    sort_key: str,
+    unhealthy_only: bool,
+) -> list[DashboardRunView]:
+    """Filter and sort run views for static and interactive presentations."""
+
+    run_views = build_run_views(summary)
+    needle = query.strip().lower()
+    if needle:
+        run_views = [
+            run_view
+            for run_view in run_views
+            if needle in run_view.run_name.lower() or needle in run_view.model_kind.lower()
+        ]
+    if unhealthy_only:
+        run_views = [run_view for run_view in run_views if run_view.issue_count > 0]
+
+    return sorted(
+        run_views,
+        key=lambda run_view: _sort_value(run_view, sort_key),
+        reverse=sort_key != "run_name",
+    )
+
+
+def build_overview_text(
+    summary: DashboardSummary,
+    visible_runs: list[DashboardRunView],
+    *,
+    sort_key: str,
+    unhealthy_only: bool,
+    query: str,
+) -> str:
+    """Build summary text for the interactive inspector pane."""
+
+    champion_name = str(summary.best_run["run_name"]) if summary.best_run is not None else "n/a"
+    unhealthy_count = sum(status_has_issues(status) for status in summary.artifact_statuses)
+    filter_state = "unhealthy only" if unhealthy_only else "all runs"
+    search_text = query.strip() or "—"
+
+    return "\n".join(
+        [
+            "Deck Overview",
+            f"Tracked runs: {len(summary.runs)}",
+            f"Visible runs: {len(visible_runs)}",
+            f"Champion: {champion_name}",
+            f"Runs with artifact issues: {unhealthy_count}",
+            f"Sort: {sort_key}",
+            f"Health filter: {filter_state}",
+            f"Search: {search_text}",
+        ]
+    )
+
+
+def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | None) -> str:
+    """Build the right-hand detail pane text for one selected run."""
+
+    if not summary.runs:
+        return "No tracked runs yet. Train a model to populate the command deck."
+    if selected_run_name is None:
+        return "No run selected. Use the filter, health toggle, or arrow keys to pick a run."
+
+    run_by_name = {str(run["run_name"]): run for run in summary.runs}
+    status_by_name = _artifact_status_by_run(summary)
+    run = run_by_name.get(selected_run_name)
+    status = status_by_name.get(selected_run_name)
+    if run is None or status is None:
+        return "Selected run is no longer available. Reload the dashboard with r."
+
+    champion_marker = (
+        "Yes" if summary.best_run and summary.best_run["run_name"] == selected_run_name else "No"
+    )
+    delta_line = _build_delta_line(summary.best_run, run)
+    issue_summary = f"Artifact issues: {_artifact_issue_count(status)}"
+    return "\n".join(
+        [
+            f"Run: {selected_run_name}",
+            f"Champion: {champion_marker}",
+            f"Model kind: {run.get('model_kind', 'unknown')}",
+            f"Accuracy: {_format_metric(run, 'accuracy')}",
+            f"F1: {_format_metric(run, 'f1')}",
+            f"ROC AUC: {_format_metric(run, 'roc_auc')}",
+            delta_line,
+            issue_summary,
+            "",
+            "Artifact health:",
+            f"- {status.model_status}",
+            f"- {status.metrics_status}",
+            f"- {status.card_status}",
+        ]
+    )
+
+
+def launch_dashboard_app(registry_path: Path, run_root: Path) -> int:
+    """Launch the interactive Textual app."""
+
+    app = MerlinDashboardApp(registry_path=registry_path, run_root=run_root)
+    app.run()
+    return 0
 
 
 def _load_run_metadata(run_dir: Path) -> dict[str, str]:
@@ -102,12 +549,56 @@ def _safe_json_file(path: Path, default: dict[str, object]) -> dict[str, object]
     return payload if isinstance(payload, dict) else default
 
 
+def _normalize_run(candidate: object) -> dict[str, object] | None:
+    if not isinstance(candidate, dict):
+        return None
+    if "run_name" not in candidate:
+        return None
+    return dict(candidate)
+
+
+def _normalize_runs(candidates: object) -> list[dict[str, object]]:
+    if not isinstance(candidates, list):
+        return []
+
+    runs: list[dict[str, object]] = []
+    for candidate in candidates:
+        run = _normalize_run(candidate)
+        if run is not None:
+            runs.append(run)
+    return runs
+
+
 def _metric_value(run: dict[str, object], key: str, default: float = -1.0) -> float:
     value = run.get(key)
     try:
         return float(value)
     except (TypeError, ValueError):
         return default
+
+
+def _sort_value(run_view: DashboardRunView, sort_key: str) -> float | str:
+    if sort_key == "run_name":
+        return run_view.run_name
+    value = getattr(run_view, sort_key)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return -1.0
+
+
+def status_has_issues(status: RunArtifactStatus) -> bool:
+    """Return whether any artifact is missing for a run."""
+
+    return _artifact_issue_count(status) > 0
+
+
+def _build_delta_line(best_run: dict[str, object] | None, current_run: dict[str, object]) -> str:
+    if best_run is None:
+        return "Delta vs champion (F1): n/a"
+
+    delta = _metric_value(current_run, "f1") - _metric_value(best_run, "f1")
+    return f"Delta vs champion (F1): {delta:+.4f}"
 
 
 def _format_metric(run: dict[str, object], key: str) -> str:
@@ -153,7 +644,8 @@ def _build_dashboard(summary: DashboardSummary, registry_path: Path, run_root: P
 def _brand_panel() -> Panel:
     title = Text(BRAND_TITLE, style="bold magenta")
     subtitle = Text(BRAND_TAGLINE, style="italic cyan")
-    banner = Group(title, Text(""), subtitle)
+    logo = Text(render_merlin_logo(), style="bright_magenta")
+    banner = Group(logo, Text(""), title, Text(""), subtitle)
     return Panel(banner, border_style="bright_magenta", title="Command Bridge")
 
 
@@ -187,22 +679,25 @@ def _leaderboard_panel(summary: DashboardSummary) -> Panel:
     table.add_column("Accuracy", justify="right")
     table.add_column("F1", justify="right")
     table.add_column("ROC AUC", justify="right")
+    table.add_column("Issues", justify="right")
 
-    for run in sorted(
-        summary.runs,
-        key=lambda item: (_metric_value(item, "f1"), _metric_value(item, "roc_auc")),
-        reverse=True,
+    for run_view in select_run_views(
+        summary,
+        query="",
+        sort_key=DEFAULT_SORT_KEY,
+        unhealthy_only=False,
     ):
         table.add_row(
-            str(run["run_name"]),
-            str(run.get("model_kind", "unknown")),
-            _format_metric(run, "accuracy"),
-            _format_metric(run, "f1"),
-            _format_metric(run, "roc_auc"),
+            run_view.run_name,
+            run_view.model_kind,
+            run_view.accuracy,
+            run_view.f1,
+            run_view.roc_auc,
+            str(run_view.issue_count),
         )
 
     if not summary.runs:
-        table.add_row("—", "—", "—", "—", "—")
+        table.add_row("—", "—", "—", "—", "—", "—")
 
     return Panel(table, border_style="blue", title="Leaderboard")
 
@@ -236,14 +731,18 @@ def _operator_hints_panel(summary: DashboardSummary, registry_path: Path, run_ro
             Text("Next move:"),
             Text("- Train baseline: bc-mlops train --config configs/train.yaml"),
             Text("- Compare runs: bc-mlops compare --registry artifacts/registry.json"),
+            Text("- Open interactive deck: bc-mlops dashboard --interactive"),
         )
         return Panel(hints, border_style="cyan", title="Operator Hints")
 
     missing_cards = sum("missing" in status.card_status for status in summary.artifact_statuses)
+    unhealthy_runs = sum(status_has_issues(status) for status in summary.artifact_statuses)
     hints = Group(
         Text(f"Registry: {registry_path}"),
         Text(f"Run root: {run_root}"),
         Text(f"Runs missing model cards: {missing_cards}"),
+        Text(f"Runs with any artifact issue: {unhealthy_runs}"),
         Text("Next move: bc-mlops report --run-dir <run_dir> --output <run_dir>/MODEL_CARD.md"),
+        Text("Interactive mode: bc-mlops dashboard --interactive"),
     )
     return Panel(hints, border_style="cyan", title="Operator Hints")

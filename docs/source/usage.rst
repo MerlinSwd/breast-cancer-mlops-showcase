@@ -49,9 +49,25 @@ Open the terminal dashboard
      --registry artifacts/registry.json \
      --run-root artifacts/runs
 
+Open the interactive command deck
+---------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops dashboard \
+     --registry artifacts/registry.json \
+     --run-root artifacts/runs \
+     --interactive
+
 The dashboard highlights the current champion run, prints a sorted leaderboard,
 checks whether each run directory still contains the expected artifacts, and
 points the operator at the next command worth running.
+
+The interactive deck adds live filtering by run name or model kind, keyboard
+navigation through the run list, an overview pane for deck health and sort
+state, a detail pane with metric deltas versus the champion, an unhealthy-only
+filter with ``h``, sort cycling with ``s``, filter focus with ``/``, reload
+support with ``r``, and quit with ``q``.
 
 Validate a trained run
 ----------------------

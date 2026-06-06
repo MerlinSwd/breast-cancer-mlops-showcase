@@ -168,6 +168,32 @@ def test_render_dashboard_text_tolerates_malformed_registry_json(tmp_path: Path)
     assert "No tracked runs yet" in output
 
 
+def test_render_dashboard_text_tolerates_schema_mismatches_in_registry(tmp_path: Path) -> None:
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"runs": [None, {}, {"f1": 0.9}], "best_run": None}))
+
+    output = render_dashboard_text(
+        registry_path=registry_path,
+        run_root=tmp_path / "artifacts" / "runs",
+    )
+
+    assert "No tracked runs yet" in output
+
+
+def test_render_dashboard_text_tolerates_non_list_runs_field(tmp_path: Path) -> None:
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"runs": None}))
+
+    output = render_dashboard_text(
+        registry_path=registry_path,
+        run_root=tmp_path / "artifacts" / "runs",
+    )
+
+    assert "No tracked runs yet" in output
+
+
 def test_render_dashboard_text_tolerates_missing_metrics_in_registry(tmp_path: Path) -> None:
     run_root = tmp_path / "artifacts" / "runs"
     _seed_run(run_root, "broken-run", model_artifact="model.joblib", with_model_card=True)
@@ -230,3 +256,70 @@ raise SystemExit(main([
 
     assert result.returncode == 0, result.stderr
     assert "No tracked runs yet" in result.stdout
+
+
+def test_dashboard_command_dispatches_to_interactive_app(tmp_path: Path, monkeypatch) -> None:
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"runs": []}))
+
+    captured: dict[str, object] = {}
+
+    def fake_launch_dashboard_app(*, registry_path: Path, run_root: Path) -> None:
+        captured["registry_path"] = registry_path
+        captured["run_root"] = run_root
+
+    monkeypatch.setattr("bc_mlops_showcase.tui.launch_dashboard_app", fake_launch_dashboard_app)
+
+    exit_code = main(
+        [
+            "dashboard",
+            "--registry",
+            str(registry_path),
+            "--run-root",
+            str(tmp_path / "artifacts" / "runs"),
+            "--interactive",
+        ]
+    )
+
+    assert exit_code == 0
+    assert captured == {
+        "registry_path": registry_path,
+        "run_root": tmp_path / "artifacts" / "runs",
+    }
+
+
+def test_compare_command_imports_without_textual_for_non_dashboard_usage(tmp_path: Path) -> None:
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(json.dumps({"runs": []}))
+
+    script = f"""
+import builtins
+
+real_import = builtins.__import__
+
+def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+    if name == 'textual' or name.startswith('textual.'):
+        raise ModuleNotFoundError('No module named textual')
+    return real_import(name, globals, locals, fromlist, level)
+
+builtins.__import__ = fake_import
+
+from bc_mlops_showcase.cli import main
+
+raise SystemExit(main([
+    'compare',
+    '--registry', {str(registry_path)!r},
+]))
+"""
+
+    result = subprocess.run(
+        [sys.executable, "-c", script],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert '"runs": []' in result.stdout

@@ -91,12 +91,30 @@ uv run bc-mlops dashboard \
   --run-root artifacts/runs
 ```
 
+### Open the interactive command deck
+
+```bash
+uv run bc-mlops dashboard \
+  --registry artifacts/registry.json \
+  --run-root artifacts/runs \
+  --interactive
+```
+
 The dashboard gives you a quick terminal "bridge view" of:
 
 - the current champion run
 - a metric leaderboard across tracked runs
 - artifact health checks for model files, metrics, and model cards
 - operator hints for the next useful command
+
+The interactive deck adds:
+
+- live filtering by run name or model kind
+- keyboard navigation across tracked runs
+- an overview pane with champion, visible-run counts, current sort, and search state
+- a detail pane for the selected run with metric deltas vs the champion
+- unhealthy-only mode to isolate runs missing artifacts or model cards
+- sort cycling with `s`, health filtering with `h`, reload with `r`, filtering with `/`, and quit with `q`
 
 ### Validate against quality gates
 
