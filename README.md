@@ -2,7 +2,8 @@
 
 An end-to-end **tabular MLOps** project for classifying breast cancer tumors with a
 config-driven training pipeline, **MLflow tracking**, **uv-managed environments**,
-and swappable model backends for both **scikit-learn** and **PyTorch**.
+and swappable model backends for **scikit-learn** and **PyTorch** across both the
+built-in Wisconsin diagnostic dataset and a harder Coimbra benchmark.
 
 This repository is meant to feel like a small but real ML platform rather than a
 single notebook that accidentally escaped into version control.
@@ -11,7 +12,9 @@ single notebook that accidentally escaped into version control.
 
 - trains reproducible models from YAML configuration
 - switches model families through `model.kind` instead of CLI rewrites
-- supports a fast `sklearn_logreg` baseline and a `pytorch_mlp` backend
+- switches datasets through `dataset.kind` instead of pipeline rewrites
+- supports `sklearn_logreg`, `sklearn_random_forest`, and `pytorch_mlp` backends
+- benchmarks on the built-in sklearn breast-cancer dataset and the Coimbra CSV dataset
 - logs runs, metrics, params, and artifacts to **MLflow**
 - validates trained models against configurable quality gates
 - generates run artifacts and markdown model cards
@@ -60,6 +63,7 @@ uv run python -m sphinx -W -b html docs/source docs/_build/html
 ```bash
 uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
 ```
 
 ### 5. Inspect results
@@ -112,6 +116,7 @@ The interactive deck adds:
 - live filtering by run name or model kind
 - keyboard navigation across tracked runs
 - an overview pane with champion, visible-run counts, current sort, and search state
+- a richer run dossier with timestamp, train/test rows, runtime, dataset, MLflow IDs, and artifact paths
 - a detail pane for the selected run with metric deltas vs the champion
 - unhealthy-only mode to isolate runs missing artifacts or model cards
 - sort cycling with `s`, health filtering with `h`, reload with `r`, filtering with `/`, and quit with `q`
@@ -156,6 +161,8 @@ experiment_name: baseline-logreg
 tracking:
   uri: ./mlruns
   experiment_name: bc-mlops-showcase
+dataset:
+  kind: sklearn_breast_cancer
 model:
   kind: sklearn_logreg
   device: cpu
@@ -171,6 +178,8 @@ experiment_name: baseline-pytorch-mlp
 tracking:
   uri: ./mlruns
   experiment_name: bc-mlops-showcase
+dataset:
+  kind: sklearn_breast_cancer
 model:
   kind: pytorch_mlp
   device: auto
@@ -180,6 +189,27 @@ model:
     batch_size: 32
     learning_rate: 0.01
     dropout: 0.1
+```
+
+### Harder Coimbra benchmark with random forest
+
+```yaml
+experiment_name: coimbra-random-forest
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_random_forest
+  device: cpu
+  params:
+    n_estimators: 200
+    max_depth: 6
+    min_samples_leaf: 2
 ```
 
 ## Training outputs

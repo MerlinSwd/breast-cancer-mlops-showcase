@@ -13,6 +13,7 @@ def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
     metrics = json.loads((run_path / "metrics.json").read_text())
     metadata = json.loads((run_path / "metadata.json").read_text())
 
+    dataset = metadata.get("dataset", {})
     model_kind = metadata["model"]["kind"]
     runtime = metadata["model"]["runtime"]
     lines = [
@@ -23,6 +24,8 @@ def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
         f"- Timestamp: {metadata['timestamp']}",
         f"- Train rows: {metadata['train_rows']}",
         f"- Test rows: {metadata['test_rows']}",
+        f"- Dataset kind: {dataset.get('kind', metadata.get('dataset_name', 'unknown'))}",
+        f"- Target column: {dataset.get('target_column', metadata.get('target_name', 'target'))}",
         f"- Model kind: {model_kind}",
         f"- Runtime: {runtime['framework']} on {runtime['device']}",
         "",

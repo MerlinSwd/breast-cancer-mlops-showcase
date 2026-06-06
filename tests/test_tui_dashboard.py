@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from bc_mlops_showcase.cli import main
 from bc_mlops_showcase.tui import render_dashboard_text
 
@@ -28,16 +30,28 @@ def _seed_run(run_root: Path, run_name: str, *, model_artifact: str, with_model_
                 "timestamp": "20260606T155803Z",
                 "train_rows": 455,
                 "test_rows": 114,
+                "dataset": {
+                    "kind": "csv_tabular_binary",
+                    "path": "data/breast-cancer-coimbra.csv",
+                    "target_column": "Classification",
+                },
                 "model": {
                     "kind": "sklearn_logreg",
                     "artifact": model_artifact,
                     "runtime": {"framework": "sklearn", "device": "cpu"},
                 },
-                "mlflow": {"run_id": "run-123"},
+                "mlflow": {"run_id": "run-123", "tracking_uri": "sqlite:///mlruns/mlflow.db"},
             }
         )
     )
     (run_dir / model_artifact).write_text("model-bytes-go-here")
+    (run_dir / "config.resolved.yaml").write_text("model:\n  kind: sklearn_logreg\n")
+    pd.DataFrame(
+        [
+            {"feature": "radius_mean", "importance": 0.42},
+            {"feature": "texture_mean", "importance": 0.25},
+        ]
+    ).to_csv(run_dir / "feature_importance.csv", index=False)
     if with_model_card:
         (run_dir / "MODEL_CARD.md").write_text("# Model Card\n")
     return run_dir

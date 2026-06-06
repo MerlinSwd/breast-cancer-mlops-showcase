@@ -1,0 +1,21 @@
+experiment_name: coimbra-random-forest
+random_seed: 42
+threshold: 0.5
+split:
+  test_size: 0.2
+  stratify: true
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_random_forest
+  device: cpu
+  params:
+    n_estimators: 200
+    max_depth: 6
+    min_samples_leaf: 2

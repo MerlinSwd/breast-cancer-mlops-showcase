@@ -77,7 +77,7 @@ def _write_registry(
 def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingResult:
     """Train the configured backend, evaluate it, and persist run artifacts."""
 
-    dataset = load_dataset()
+    dataset = load_dataset(config.dataset)
     X_train, X_test, y_train, y_test = train_test_split(
         dataset.features,
         dataset.target,
@@ -123,7 +123,15 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
             "train_rows": len(X_train),
             "test_rows": len(X_test),
             "target_name": dataset.target_name,
+            "dataset_name": dataset.dataset_name,
             "config": config_to_dict(config),
+            "dataset": {
+                "kind": config.dataset.kind,
+                "path": config.dataset.path,
+                "target_column": config.dataset.target_column,
+                "positive_label": config.dataset.positive_label,
+                "drop_columns": list(config.dataset.drop_columns),
+            },
             "model": {
                 "kind": backend.kind,
                 "artifact": model_path.name,

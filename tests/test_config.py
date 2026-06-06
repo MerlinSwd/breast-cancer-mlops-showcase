@@ -2,6 +2,9 @@ from pathlib import Path
 
 from bc_mlops_showcase.config import TrainingConfig, load_training_config
 
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COIMBRA_DATASET = REPO_ROOT / "data" / "breast-cancer-coimbra.csv"
+
 
 def test_load_training_config_reads_expected_fields(tmp_path: Path) -> None:
     config_path = tmp_path / "train.yaml"
@@ -36,3 +39,37 @@ threshold: 0.42
     assert config.model.device == "cpu"
     assert config.model.params["c"] == 0.5
     assert config.threshold == 0.42
+
+
+def test_load_training_config_supports_csv_dataset_and_random_forest(tmp_path: Path) -> None:
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        f"""
+experiment_name: coimbra-rf
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
+dataset:
+  kind: csv_tabular_binary
+  path: {COIMBRA_DATASET}
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_random_forest
+  params:
+    n_estimators: 32
+    max_depth: 4
+    min_samples_leaf: 2
+""".strip()
+    )
+
+    config = load_training_config(config_path)
+
+    assert config.dataset.kind == "csv_tabular_binary"
+    assert Path(config.dataset.path) == COIMBRA_DATASET
+    assert config.dataset.target_column == "Classification"
+    assert float(config.dataset.positive_label) == 2.0
+    assert config.model.kind == "sklearn_random_forest"
+    assert config.model.params["n_estimators"] == 32
+    assert config.model.params["max_depth"] == 4
+    assert config.model.params["min_samples_leaf"] == 2

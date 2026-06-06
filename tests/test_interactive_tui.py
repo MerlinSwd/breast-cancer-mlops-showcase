@@ -27,14 +27,32 @@ def _seed_run(
             {
                 "experiment_name": run_name,
                 "timestamp": "20260607T120000Z",
+                "train_rows": 455,
+                "test_rows": 114,
+                "dataset": {
+                    "kind": "csv_tabular_binary",
+                    "path": "data/breast-cancer-coimbra.csv",
+                    "target_column": "Classification",
+                },
+                "config": {
+                    "tracking": {"experiment_name": "bc-mlops-showcase"},
+                    "threshold": 0.5,
+                },
                 "model": {
                     "kind": model_kind,
                     "artifact": model_artifact,
+                    "runtime": {"framework": "sklearn", "device": "cpu"},
+                },
+                "mlflow": {
+                    "run_id": f"{run_name}-run-id",
+                    "tracking_uri": "sqlite:///mlruns/mlflow.db",
                 },
             }
         )
     )
     (run_dir / model_artifact).write_text("pretend-model")
+    (run_dir / "config.resolved.yaml").write_text("model:\n  kind: sklearn_logreg\n")
+    (run_dir / "feature_importance.csv").write_text("feature,importance\nradius_mean,0.42\n")
     if with_model_card:
         (run_dir / "MODEL_CARD.md").write_text("# Model Card\n")
     return run_dir
@@ -160,7 +178,7 @@ def test_build_overview_text_reports_visible_runs_sort_and_health(tmp_path: Path
     assert "Search: pytorch" in overview
 
 
-def test_build_run_detail_text_surfaces_selected_run_metrics_and_health(tmp_path: Path) -> None:
+def test_build_run_detail_text_surfaces_selected_run_metrics_and_dossier(tmp_path: Path) -> None:
     from bc_mlops_showcase.tui import load_dashboard_summary
 
     registry_path, run_root = _seed_registry(tmp_path)
@@ -172,6 +190,14 @@ def test_build_run_detail_text_surfaces_selected_run_metrics_and_health(tmp_path
     assert "pytorch_mlp" in detail_text
     assert "0.9810" in detail_text
     assert "Artifact issues: 1" in detail_text
+    assert "Timestamp: 20260607T120000Z" in detail_text
+    assert "Rows: train=455 test=114" in detail_text
+    assert "Runtime: sklearn on cpu" in detail_text
+    assert "MLflow run id: pytorch-mlp-20260607T120500Z-run-id" in detail_text
+    assert "Dataset: csv_tabular_binary" in detail_text
+    assert "Target column: Classification" in detail_text
+    assert "config.resolved.yaml" in detail_text
+    assert "feature_importance.csv" in detail_text
     assert "MODEL_CARD missing" in detail_text
 
 
@@ -182,6 +208,8 @@ def test_build_run_detail_text_counts_multiple_artifact_issues(tmp_path: Path) -
     broken_run_dir = run_root / "pytorch-mlp-20260607T120500Z"
     (broken_run_dir / "model.pt").unlink()
     (broken_run_dir / "metrics.json").unlink()
+    (broken_run_dir / "config.resolved.yaml").unlink()
+    (broken_run_dir / "feature_importance.csv").unlink()
     summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
 
     detail_text = build_run_detail_text(summary, selected_run_name="pytorch-mlp-20260607T120500Z")
@@ -190,6 +218,8 @@ def test_build_run_detail_text_counts_multiple_artifact_issues(tmp_path: Path) -
     assert "model.pt missing" in detail_text
     assert "metrics.json missing" in detail_text
     assert "MODEL_CARD missing" in detail_text
+    assert "config.resolved.yaml missing" in detail_text
+    assert "feature_importance.csv missing" in detail_text
 
 
 def test_interactive_dashboard_app_supports_sort_cycle_and_health_filter(
@@ -222,6 +252,7 @@ def test_interactive_dashboard_app_supports_sort_cycle_and_health_filter(
             assert len(run_list.children) == 1
             assert "pytorch-mlp-20260607T120500Z" in str(details.render())
             assert "Health filter: unhealthy only" in str(overview.render())
+            assert "MLflow run id: pytorch-mlp-20260607T120500Z-run-id" in str(details.render())
 
     asyncio.run(scenario())
 

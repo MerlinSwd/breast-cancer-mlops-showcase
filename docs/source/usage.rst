@@ -33,6 +33,13 @@ Train the PyTorch backend
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
+Train the harder Coimbra benchmark
+----------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+
 Compare runs
 ------------
 
@@ -65,9 +72,10 @@ points the operator at the next command worth running.
 
 The interactive deck adds live filtering by run name or model kind, keyboard
 navigation through the run list, an overview pane for deck health and sort
-state, a detail pane with metric deltas versus the champion, an unhealthy-only
-filter with ``h``, sort cycling with ``s``, filter focus with ``/``, reload
-support with ``r``, and quit with ``q``.
+state, a richer run dossier with timestamp, train/test rows, runtime, dataset,
+MLflow identifiers, and artifact-path health, a detail pane with metric deltas
+versus the champion, an unhealthy-only filter with ``h``, sort cycling with
+``s``, filter focus with ``/``, reload support with ``r``, and quit with ``q``.
 
 Validate a trained run
 ----------------------

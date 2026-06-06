@@ -1,10 +1,15 @@
 import json
 from pathlib import Path
 
+import pandas as pd
+
 from bc_mlops_showcase.cli import main
 from bc_mlops_showcase.config import load_training_config
 from bc_mlops_showcase.data import load_dataset
 from bc_mlops_showcase.pipeline import train_and_evaluate
+
+REPO_ROOT = Path(__file__).resolve().parents[1]
+COIMBRA_DATASET = REPO_ROOT / "data" / "breast-cancer-coimbra.csv"
 
 
 def test_load_training_config_supports_model_backend_and_tracking(tmp_path: Path) -> None:
@@ -92,6 +97,57 @@ model:
             "predict",
             "--model",
             str(run_dir / "model.pt"),
+            "--input",
+            str(payload_path),
+        ]
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["predictions"][0]["label"] in {"benign", "malignant"}
+    assert 0.0 <= output["predictions"][0]["probability"] <= 1.0
+
+
+def test_cli_train_and_predict_support_random_forest_on_coimbra_dataset(
+    tmp_path: Path, capsys
+) -> None:
+    config_path = tmp_path / "train.yaml"
+    output_dir = tmp_path / "artifacts"
+    config_path.write_text(
+        f"""
+experiment_name: coimbra-rf
+tracking:
+  uri: {tmp_path / "mlruns"}
+  experiment_name: integration-tests
+dataset:
+  kind: csv_tabular_binary
+  path: {COIMBRA_DATASET}
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_random_forest
+  params:
+    n_estimators: 24
+    max_depth: 4
+    min_samples_leaf: 2
+""".strip()
+    )
+
+    assert main(["train", "--config", str(config_path), "--output-dir", str(output_dir)]) == 0
+    capsys.readouterr()
+    run_dir = sorted(path for path in output_dir.iterdir() if path.is_dir())[-1]
+    assert (run_dir / "model.joblib").exists()
+
+    coimbra_frame = pd.read_csv(COIMBRA_DATASET)
+    record = coimbra_frame.drop(columns=["Classification"]).iloc[0].to_dict()
+    payload_path = tmp_path / "sample.json"
+    payload_path.write_text(json.dumps(record))
+
+    exit_code = main(
+        [
+            "predict",
+            "--model",
+            str(run_dir / "model.joblib"),
             "--input",
             str(payload_path),
         ]

@@ -28,6 +28,9 @@ class RunArtifactStatus:
     model_status: str
     metrics_status: str
     card_status: str
+    config_status: str
+    feature_importance_status: str
+    metadata_status: str
 
 
 @dataclass(slots=True)
@@ -332,11 +335,27 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
     for run in runs:
         run_dir = run_root / str(run["run_name"])
         metadata = _load_run_metadata(run_dir)
-        model_artifact = metadata.get("artifact", "model artifact")
+        model_artifact = str(metadata.get("model_artifact", "model artifact"))
         enriched_run = dict(run)
         enriched_run["model_kind"] = enriched_run.get("model_kind") or metadata.get(
-            "kind", "unknown"
+            "model_kind", "unknown"
         )
+        for key in (
+            "timestamp",
+            "experiment_name",
+            "train_rows",
+            "test_rows",
+            "dataset_kind",
+            "dataset_path",
+            "target_column",
+            "mlflow_run_id",
+            "mlflow_tracking_uri",
+            "runtime_framework",
+            "runtime_device",
+            "model_artifact",
+        ):
+            if key not in enriched_run and metadata.get(key) is not None:
+                enriched_run[key] = metadata[key]
         enriched_runs.append(enriched_run)
         artifact_statuses.append(
             RunArtifactStatus(
@@ -345,6 +364,13 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
                 model_status=_ok_or_missing(run_dir / model_artifact, model_artifact),
                 metrics_status=_ok_or_missing(run_dir / "metrics.json", "metrics.json"),
                 card_status=_ok_or_missing(run_dir / "MODEL_CARD.md", "MODEL_CARD"),
+                config_status=_ok_or_missing(
+                    run_dir / "config.resolved.yaml", "config.resolved.yaml"
+                ),
+                feature_importance_status=_ok_or_missing(
+                    run_dir / "feature_importance.csv", "feature_importance.csv"
+                ),
+                metadata_status=_ok_or_missing(run_dir / "metadata.json", "metadata.json"),
             )
         )
 
@@ -405,6 +431,9 @@ def build_run_views(summary: DashboardSummary) -> list[DashboardRunView]:
                 model_status="model artifact missing",
                 metrics_status="metrics.json missing",
                 card_status="MODEL_CARD missing",
+                config_status="config.resolved.yaml missing",
+                feature_importance_status="feature_importance.csv missing",
+                metadata_status="metadata.json missing",
             ),
         )
         issue_count = _artifact_issue_count(status)
@@ -500,6 +529,17 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
     )
     delta_line = _build_delta_line(summary.best_run, run)
     issue_summary = f"Artifact issues: {_artifact_issue_count(status)}"
+    timestamp = str(run.get("timestamp", "n/a"))
+    train_rows = run.get("train_rows", "n/a")
+    test_rows = run.get("test_rows", "n/a")
+    runtime_framework = str(run.get("runtime_framework", "unknown"))
+    runtime_device = str(run.get("runtime_device", "unknown"))
+    mlflow_run_id = str(run.get("mlflow_run_id", "n/a"))
+    mlflow_tracking_uri = str(run.get("mlflow_tracking_uri", "n/a"))
+    dataset_kind = str(run.get("dataset_kind", "unknown"))
+    target_column = str(run.get("target_column", "n/a"))
+    model_artifact = str(run.get("model_artifact", "unknown"))
+    dataset_path = str(run.get("dataset_path", "n/a"))
     return "\n".join(
         [
             f"Run: {selected_run_name}",
@@ -511,10 +551,24 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
             delta_line,
             issue_summary,
             "",
+            "Run dossier:",
+            f"- Timestamp: {timestamp}",
+            f"- Rows: train={train_rows} test={test_rows}",
+            f"- Runtime: {runtime_framework} on {runtime_device}",
+            f"- MLflow run id: {mlflow_run_id}",
+            f"- Tracking URI: {mlflow_tracking_uri}",
+            f"- Dataset: {dataset_kind}",
+            f"- Dataset path: {dataset_path}",
+            f"- Target column: {target_column}",
+            f"- Model artifact: {model_artifact}",
+            "",
             "Artifact health:",
+            f"- {status.metadata_status}",
             f"- {status.model_status}",
             f"- {status.metrics_status}",
             f"- {status.card_status}",
+            f"- {status.config_status}",
+            f"- {status.feature_importance_status}",
         ]
     )
 
@@ -527,16 +581,30 @@ def launch_dashboard_app(registry_path: Path, run_root: Path) -> int:
     return 0
 
 
-def _load_run_metadata(run_dir: Path) -> dict[str, str]:
+def _load_run_metadata(run_dir: Path) -> dict[str, object]:
     metadata_path = run_dir / "metadata.json"
     if not metadata_path.exists():
         return {}
 
     payload = _safe_json_file(metadata_path, default={})
-    model = payload.get("model", {})
+    model = payload.get("model", {}) if isinstance(payload.get("model", {}), dict) else {}
+    runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
+    dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
+    mlflow = payload.get("mlflow", {}) if isinstance(payload.get("mlflow", {}), dict) else {}
     return {
-        "artifact": str(model.get("artifact", "model artifact")),
-        "kind": str(model.get("kind", "unknown")),
+        "model_artifact": str(model.get("artifact", "model artifact")),
+        "model_kind": str(model.get("kind", "unknown")),
+        "timestamp": payload.get("timestamp"),
+        "experiment_name": payload.get("experiment_name"),
+        "train_rows": payload.get("train_rows"),
+        "test_rows": payload.get("test_rows"),
+        "dataset_kind": dataset.get("kind"),
+        "dataset_path": dataset.get("path"),
+        "target_column": dataset.get("target_column"),
+        "mlflow_run_id": mlflow.get("run_id"),
+        "mlflow_tracking_uri": mlflow.get("tracking_uri"),
+        "runtime_framework": runtime.get("framework"),
+        "runtime_device": runtime.get("device"),
     }
 
 

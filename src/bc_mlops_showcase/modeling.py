@@ -10,6 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import torch
+from sklearn.ensemble import RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -43,7 +44,7 @@ class BackendTrainingBundle:
     def predict_probabilities(self, records: pd.DataFrame) -> np.ndarray:
         """Predict positive-class probabilities for input records."""
 
-        if self.kind == "sklearn_logreg":
+        if self.kind.startswith("sklearn_"):
             return self._predictor.predict_proba(records[self.feature_names])[:, 1]
         return _predict_pytorch_checkpoint(
             checkpoint=self._serializer_payload,
@@ -191,6 +192,39 @@ def _train_pytorch_model(
     )
 
 
+def _train_random_forest_model(
+    config: TrainingConfig,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+) -> BackendTrainingBundle:
+    classifier = RandomForestClassifier(
+        n_estimators=int(config.model.params["n_estimators"]),
+        max_depth=(
+            None
+            if config.model.params.get("max_depth") is None
+            else int(config.model.params["max_depth"])
+        ),
+        min_samples_leaf=int(config.model.params.get("min_samples_leaf", 1)),
+        random_state=config.random_seed,
+    )
+    classifier.fit(X_train, y_train)
+    feature_importance = pd.DataFrame(
+        {
+            "feature": X_train.columns,
+            "importance": classifier.feature_importances_,
+        }
+    ).sort_values("importance", ascending=False)
+    return BackendTrainingBundle(
+        kind="sklearn_random_forest",
+        artifact_filename="model.joblib",
+        feature_names=list(X_train.columns),
+        runtime={"framework": "sklearn", "device": "cpu"},
+        feature_importance=feature_importance,
+        _predictor=classifier,
+        _serializer_payload=classifier,
+    )
+
+
 def train_backend(
     config: TrainingConfig,
     X_train: pd.DataFrame,
@@ -200,6 +234,8 @@ def train_backend(
 
     if config.model.kind == "sklearn_logreg":
         return _train_sklearn_model(config=config, X_train=X_train, y_train=y_train)
+    if config.model.kind == "sklearn_random_forest":
+        return _train_random_forest_model(config=config, X_train=X_train, y_train=y_train)
     if config.model.kind == "pytorch_mlp":
         return _train_pytorch_model(config=config, X_train=X_train, y_train=y_train)
     raise ValueError(f"unsupported model kind: {config.model.kind}")

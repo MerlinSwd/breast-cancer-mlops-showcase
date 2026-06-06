@@ -1,4 +1,4 @@
-bc\_mlops\_showcase.config
+﻿bc\_mlops\_showcase.config
 ==========================
 
 .. automodule:: bc_mlops_showcase.config
@@ -15,6 +15,7 @@ bc\_mlops\_showcase.config
 
    .. autosummary::
    
+      DatasetConfig
       ModelConfig
       SplitConfig
       TrackingConfig
