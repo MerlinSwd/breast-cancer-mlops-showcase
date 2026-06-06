@@ -66,6 +66,7 @@ uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts
 
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
+uv run bc-mlops dashboard --registry artifacts/registry.json --run-root artifacts/runs
 ```
 
 ## CLI usage
@@ -81,6 +82,21 @@ uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
 ```
+
+### Open the branded terminal dashboard
+
+```bash
+uv run bc-mlops dashboard \
+  --registry artifacts/registry.json \
+  --run-root artifacts/runs
+```
+
+The dashboard gives you a quick terminal "bridge view" of:
+
+- the current champion run
+- a metric leaderboard across tracked runs
+- artifact health checks for model files, metrics, and model cards
+- operator hints for the next useful command
 
 ### Validate against quality gates
 

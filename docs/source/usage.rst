@@ -14,6 +14,7 @@ Available subcommands:
 
 - ``train``: train a configured backend and write run artifacts
 - ``compare``: inspect the lightweight experiment registry
+- ``dashboard``: render a branded terminal dashboard for run metrics and artifact health
 - ``validate``: enforce quality gates against a metrics file
 - ``predict``: score JSON or CSV payloads against a trained artifact
 - ``report``: generate a markdown model card for a run
@@ -38,6 +39,19 @@ Compare runs
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
+
+Open the terminal dashboard
+---------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops dashboard \
+     --registry artifacts/registry.json \
+     --run-root artifacts/runs
+
+The dashboard highlights the current champion run, prints a sorted leaderboard,
+checks whether each run directory still contains the expected artifacts, and
+points the operator at the next command worth running.
 
 Validate a trained run
 ----------------------
