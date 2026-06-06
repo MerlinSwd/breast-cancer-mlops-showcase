@@ -1,3 +1,5 @@
+"""Command-line interface for training, validation, inference, and reporting."""
+
 from __future__ import annotations
 
 import argparse
@@ -13,6 +15,8 @@ from .validation import validate_metrics
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """Build the top-level argument parser for the project CLI."""
+
     parser = argparse.ArgumentParser(description="Breast cancer MLOps showcase CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
@@ -47,6 +51,8 @@ def _print_registry(registry_path: Path) -> int:
 
 
 def main(argv: Sequence[str] | None = None) -> int:
+    """Run the CLI entrypoint and return an exit code."""
+
     parser = build_parser()
     args = parser.parse_args(argv)
 

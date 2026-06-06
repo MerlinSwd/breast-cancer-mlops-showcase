@@ -1,10 +1,13 @@
 UV ?= uv
 CLI := $(UV) run bc-mlops
 
-.PHONY: install lock lint format test train compare validate predict report build clean
+.PHONY: install docs-install lock lint format test train compare validate predict report build docs clean
 
 install:
 	$(UV) sync --extra dev
+
+docs-install:
+	$(UV) sync --extra dev --extra docs
 
 lock:
 	$(UV) lock
@@ -16,7 +19,7 @@ format:
 	$(UV) run ruff format .
 
 test:
-	$(UV) run pytest
+	$(UV) run python -m pytest
 
 train:
 	$(CLI) train --config configs/train.yaml --output-dir artifacts/runs
@@ -39,6 +42,9 @@ report:
 
 build:
 	$(UV) run python -m build
+
+docs:
+	$(UV) run python -m sphinx -b html docs/source docs/_build/html
 
 clean:
 	rm -rf .coverage .pytest_cache .ruff_cache .venv build dist htmlcov *.egg-info artifacts/runs artifacts/registry.json mlruns uv.lock

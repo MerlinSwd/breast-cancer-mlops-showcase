@@ -30,6 +30,12 @@ dev = [
   "pytest-cov>=5.0",
   "ruff>=0.6",
 ]
+docs = [
+  "furo>=2024.8.6",
+  "sphinx>=8.3",
+  "sphinx-copybutton>=0.5.2",
+  "sphinxcontrib-mermaid>=1.0.0",
+]
 
 [project.scripts]
 bc-mlops = "bc_mlops_showcase.cli:main"

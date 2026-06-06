@@ -1,3 +1,9 @@
+"""Configuration models and loaders for training runs.
+
+The project keeps backend selection in configuration so that the CLI and
+pipeline stay stable while the model family changes.
+"""
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -25,18 +31,24 @@ DEFAULT_MODEL_PARAMS: dict[str, dict[str, Any]] = {
 
 @dataclass(slots=True)
 class SplitConfig:
+    """Dataset split settings for train/test evaluation."""
+
     test_size: float = 0.2
     stratify: bool = True
 
 
 @dataclass(slots=True)
 class TrackingConfig:
+    """MLflow tracking configuration."""
+
     uri: str = "./mlruns"
     experiment_name: str = "bc-mlops-showcase"
 
 
 @dataclass(slots=True)
 class ModelConfig:
+    """Backend model selection and hyperparameters."""
+
     kind: str = DEFAULT_MODEL_KIND
     device: str = "auto"
     params: dict[str, Any] = field(
@@ -46,6 +58,8 @@ class ModelConfig:
 
 @dataclass(slots=True)
 class TrainingConfig:
+    """Top-level configuration for a training run."""
+
     experiment_name: str = "baseline-logreg"
     random_seed: int = 42
     threshold: float = 0.5
@@ -75,6 +89,8 @@ def _resolve_model_config(values: dict[str, Any] | None) -> ModelConfig:
 
 
 def load_training_config(path: str | Path) -> TrainingConfig:
+    """Load a YAML training configuration from disk."""
+
     config_path = Path(path)
     raw = yaml.safe_load(config_path.read_text()) or {}
 
@@ -94,6 +110,8 @@ def load_training_config(path: str | Path) -> TrainingConfig:
 
 
 def config_to_dict(config: TrainingConfig) -> dict[str, Any]:
+    """Convert a training configuration into a serializable dictionary."""
+
     return {
         "experiment_name": config.experiment_name,
         "random_seed": config.random_seed,

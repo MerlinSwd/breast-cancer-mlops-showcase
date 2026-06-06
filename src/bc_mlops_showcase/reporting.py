@@ -1,3 +1,5 @@
+"""Model card generation for training run artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -5,6 +7,8 @@ from pathlib import Path
 
 
 def build_model_card(run_dir: str | Path, output_path: str | Path) -> Path:
+    """Generate a markdown model card for a completed training run."""
+
     run_path = Path(run_dir)
     metrics = json.loads((run_path / "metrics.json").read_text())
     metadata = json.loads((run_path / "metadata.json").read_text())
