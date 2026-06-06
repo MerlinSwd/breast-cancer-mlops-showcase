@@ -1,0 +1,51 @@
+[build-system]
+requires = ["hatchling>=1.27.0"]
+build-backend = "hatchling.build"
+
+[project]
+name = "bc-mlops-showcase"
+version = "0.1.0"
+description = "End-to-end breast cancer classification showcase with CI/CD, DevOps, and MLOps practices"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [
+  {name = "Merlin", email = "merlin.swd@proton.me"}
+]
+dependencies = [
+  "joblib>=1.4",
+  "numpy>=1.26",
+  "pandas>=2.2",
+  "PyYAML>=6.0",
+  "scikit-learn>=1.5",
+]
+
+[project.optional-dependencies]
+dev = [
+  "build>=1.2",
+  "pre-commit>=3.8",
+  "pytest>=8.3",
+  "pytest-cov>=5.0",
+  "ruff>=0.6",
+]
+
+[project.scripts]
+bc-mlops = "bc_mlops_showcase.cli:main"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/bc_mlops_showcase"]
+
+[tool.pytest.ini_options]
+addopts = "-q --cov=bc_mlops_showcase --cov-report=term-missing"
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP", "B"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"

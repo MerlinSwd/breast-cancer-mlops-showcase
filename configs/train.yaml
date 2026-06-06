@@ -1,0 +1,9 @@
+experiment_name: baseline-logreg
+random_seed: 42
+threshold: 0.5
+split:
+  test_size: 0.2
+  stratify: true
+model:
+  c: 1.0
+  max_iter: 500
