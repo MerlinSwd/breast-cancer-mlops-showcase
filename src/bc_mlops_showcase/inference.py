@@ -3,8 +3,9 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-import joblib
 import pandas as pd
+
+from .modeling import predict_probabilities_from_path
 
 PredictionRecord = dict[str, float | int | str]
 PredictionResult = dict[str, list[PredictionRecord]]
@@ -35,9 +36,8 @@ def _build_prediction(index: int, label: str, probability: float) -> PredictionR
 
 
 def predict_records(model_path: str | Path, input_path: str | Path) -> PredictionResult:
-    model = joblib.load(model_path)
     records = load_records(input_path)
-    probabilities = model.predict_proba(records)[:, 1]
+    probabilities = predict_probabilities_from_path(model_path=model_path, records=records)
     labels = ["malignant" if probability >= 0.5 else "benign" for probability in probabilities]
 
     predictions = [

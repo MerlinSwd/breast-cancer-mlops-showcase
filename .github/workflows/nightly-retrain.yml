@@ -10,23 +10,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v3
       - uses: actions/setup-python@v5
         with:
           python-version: '3.11'
-      - name: Install
-        run: |
-          python -m pip install --upgrade pip
-          pip install -e '.[dev]'
+      - name: Sync environment
+        run: uv sync --extra dev
       - name: Train baseline model
-        run: bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
+        run: uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
       - name: Validate metrics
         run: |
           latest_run=$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
-          bc-mlops validate --metrics "$latest_run/metrics.json" --gates configs/quality_gates.yaml
+          uv run bc-mlops validate --metrics "$latest_run/metrics.json" --gates configs/quality_gates.yaml
       - name: Generate model card
         run: |
           latest_run=$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
-          bc-mlops report --run-dir "$latest_run" --output "$latest_run/MODEL_CARD.md"
+          uv run bc-mlops report --run-dir "$latest_run" --output "$latest_run/MODEL_CARD.md"
       - name: Upload artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -34,3 +33,4 @@ jobs:
           path: |
             artifacts/runs/**
             artifacts/registry.json
+            mlruns/**

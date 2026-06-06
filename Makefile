@@ -1,26 +1,22 @@
-PYTHON ?= python3
-VENV ?= .venv
-PIP := $(VENV)/bin/pip
-PYTEST := $(VENV)/bin/pytest
-RUFF := $(VENV)/bin/ruff
-BUILD := $(VENV)/bin/python -m build
-CLI := $(VENV)/bin/bc-mlops
+UV ?= uv
+CLI := $(UV) run bc-mlops
 
-.PHONY: install lint format test train compare validate predict report clean build
+.PHONY: install lock lint format test train compare validate predict report build clean
 
 install:
-	$(PYTHON) -m venv $(VENV)
-	. $(VENV)/bin/activate && python -m pip install -U pip
-	$(PIP) install -e '.[dev]'
+	$(UV) sync --extra dev
+
+lock:
+	$(UV) lock
 
 lint:
-	$(RUFF) check .
+	$(UV) run ruff check .
 
 format:
-	$(RUFF) format .
+	$(UV) run ruff format .
 
 test:
-	$(PYTEST)
+	$(UV) run pytest
 
 train:
 	$(CLI) train --config configs/train.yaml --output-dir artifacts/runs
@@ -34,14 +30,15 @@ validate:
 
 predict:
 	latest_run=$$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1); \
-	$(CLI) predict --model $$latest_run/model.joblib --input sample-inputs/sample.json
+	model_artifact=$$(find $$latest_run -maxdepth 1 \( -name 'model.joblib' -o -name 'model.pt' \) | head -1); \
+	$(CLI) predict --model $$model_artifact --input sample-inputs/sample.json
 
 report:
 	latest_run=$$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1); \
 	$(CLI) report --run-dir $$latest_run --output $$latest_run/MODEL_CARD.md
 
 build:
-	$(BUILD)
+	$(UV) run python -m build
 
 clean:
-	rm -rf .coverage .pytest_cache .ruff_cache build dist htmlcov *.egg-info artifacts/runs artifacts/registry.json
+	rm -rf .coverage .pytest_cache .ruff_cache .venv build dist htmlcov *.egg-info artifacts/runs artifacts/registry.json mlruns uv.lock

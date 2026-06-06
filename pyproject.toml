@@ -4,8 +4,8 @@ build-backend = "hatchling.build"
 
 [project]
 name = "bc-mlops-showcase"
-version = "0.1.0"
-description = "End-to-end breast cancer classification showcase with CI/CD, DevOps, and MLOps practices"
+version = "0.2.0"
+description = "End-to-end breast cancer classification showcase with CI/CD, DevOps, and extensible MLOps model backends"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -14,10 +14,12 @@ authors = [
 ]
 dependencies = [
   "joblib>=1.4",
+  "mlflow>=2.16",
   "numpy>=1.26",
   "pandas>=2.2",
   "PyYAML>=6.0",
   "scikit-learn>=1.5",
+  "torch>=2.4",
 ]
 
 [project.optional-dependencies]
@@ -49,3 +51,14 @@ select = ["E", "F", "I", "UP", "B"]
 [tool.ruff.format]
 quote-style = "double"
 indent-style = "space"
+
+[tool.uv]
+package = true
+
+[tool.uv.sources]
+torch = { index = "pytorch-cpu" }
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true

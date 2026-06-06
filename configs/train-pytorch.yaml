@@ -1,0 +1,18 @@
+experiment_name: baseline-pytorch-mlp
+random_seed: 42
+threshold: 0.5
+split:
+  test_size: 0.2
+  stratify: true
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+model:
+  kind: pytorch_mlp
+  device: auto
+  params:
+    hidden_dims: [64, 32]
+    epochs: 25
+    batch_size: 32
+    learning_rate: 0.01
+    dropout: 0.1
