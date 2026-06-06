@@ -1,49 +1,119 @@
 # Breast Cancer MLOps Showcase
 
-A private end-to-end Python project demonstrating a realistic ML workflow on the scikit-learn breast cancer dataset, now with **MLflow tracking**, **uv-managed environments**, and **config-swappable model backends** for both scikit-learn and PyTorch.
+An end-to-end **tabular MLOps** project for classifying breast cancer tumors with a
+config-driven training pipeline, **MLflow tracking**, **uv-managed environments**,
+and swappable model backends for both **scikit-learn** and **PyTorch**.
 
-## What it includes
+This repository is meant to feel like a small but real ML platform rather than a
+single notebook that accidentally escaped into version control.
 
-- Reproducible training pipeline with YAML config
-- Backend-driven model selection through `model.kind`
-- scikit-learn logistic regression baseline
-- PyTorch MLP baseline with automatic CPU/GPU device resolution
-- MLflow experiment tracking backed by local SQLite + filesystem artifacts
-- Metrics and model artifact generation
-- Lightweight experiment registry in JSON
-- Offline inference for JSON or CSV payloads
-- Quality-gate validation for model metrics
-- Markdown model card generation for each run
-- Test suite, linting, formatting, and package build
-- GitHub Actions CI, smoke-training, nightly retraining, and release workflows
-- Dockerfile for containerized execution
-- Pre-commit hooks and Make targets
+## What this project does
 
-## Quickstart with uv
+- trains reproducible models from YAML configuration
+- switches model families through `model.kind` instead of CLI rewrites
+- supports a fast `sklearn_logreg` baseline and a `pytorch_mlp` backend
+- logs runs, metrics, params, and artifacts to **MLflow**
+- validates trained models against configurable quality gates
+- generates run artifacts and markdown model cards
+- supports offline inference from JSON or CSV payloads
+- runs CI, smoke training, releases, and docs deployment through GitHub Actions
+
+## Documentation
+
+- Repository: https://github.com/MerlinSwd/breast-cancer-mlops-showcase
+- Project docs: https://merlinswd.github.io/breast-cancer-mlops-showcase/
+
+The Sphinx site includes:
+
+- installation
+- usage
+- how-to guides
+- architecture and UML diagrams
+- auto-generated API reference
+
+## Quickstart
+
+### 1. Clone the repo
 
 ```bash
-uv sync --extra dev
+git clone https://github.com/MerlinSwd/breast-cancer-mlops-showcase.git
+cd breast-cancer-mlops-showcase
+```
+
+### 2. Install with uv
+
+```bash
+uv sync --extra dev --extra docs
+```
+
+### 3. Verify the environment
+
+```bash
+uv run ruff check .
 uv run python -m pytest
-uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
-uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
-uv run bc-mlops compare --registry artifacts/registry.json
+uv run python -m build
+uv run python -m sphinx -W -b html docs/source docs/_build/html
 ```
 
-## CLI
+### 4. Train models
 
 ```bash
 uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
-uv run bc-mlops compare --registry artifacts/registry.json
-uv run bc-mlops validate --metrics artifacts/runs/<run>/metrics.json --gates configs/quality_gates.yaml
-uv run bc-mlops predict --model artifacts/runs/<run>/model.joblib --input sample-inputs/sample.json
-uv run bc-mlops predict --model artifacts/runs/<run>/model.pt --input sample-inputs/sample.json
-uv run bc-mlops report --run-dir artifacts/runs/<run> --output artifacts/runs/<run>/MODEL_CARD.md
 ```
 
-## Configuration shape
+### 5. Inspect results
 
-The pipeline is designed so model swaps happen in config, not in the CLI contract.
+```bash
+uv run bc-mlops compare --registry artifacts/registry.json
+```
+
+## CLI usage
+
+### Train
+
+```bash
+uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
+```
+
+### Compare runs
+
+```bash
+uv run bc-mlops compare --registry artifacts/registry.json
+```
+
+### Validate against quality gates
+
+```bash
+uv run bc-mlops validate \
+  --metrics artifacts/runs/<run-name>/metrics.json \
+  --gates configs/quality_gates.yaml
+```
+
+### Run offline inference
+
+```bash
+uv run bc-mlops predict \
+  --model artifacts/runs/<run-name>/model.joblib \
+  --input sample-inputs/sample.json
+
+uv run bc-mlops predict \
+  --model artifacts/runs/<run-name>/model.pt \
+  --input sample-inputs/sample.json
+```
+
+### Generate a model card
+
+```bash
+uv run bc-mlops report \
+  --run-dir artifacts/runs/<run-name> \
+  --output artifacts/runs/<run-name>/MODEL_CARD.md
+```
+
+## Configuration model
+
+The key design choice in this repo is that **backend selection happens in config**.
+That keeps the CLI stable while making model expansion cheap.
 
 ### scikit-learn baseline
 
@@ -78,42 +148,81 @@ model:
     dropout: 0.1
 ```
 
-## MLOps workflow
+## Training outputs
 
-1. Train a backend-specific model and persist reproducible artifacts.
-2. Log params, metrics, and artifacts to MLflow.
-3. Enforce minimum quality gates before promotion.
-4. Generate a model card for review and auditability.
-5. Use GitHub Actions for CI, smoke training, scheduled retraining, and tagged releases.
+Each run writes a timestamped directory under `artifacts/runs/` with:
 
-## Architecture summary
+- model artifact (`model.joblib` or `model.pt`)
+- `metrics.json`
+- `metadata.json`
+- `config.resolved.yaml`
+- optional `feature_importance.csv`
+- generated `MODEL_CARD.md`
 
-- `src/bc_mlops_showcase/config.py` — config loading and backend model resolution
-- `src/bc_mlops_showcase/modeling.py` — backend registry/training/prediction logic
-- `src/bc_mlops_showcase/tracking.py` — MLflow SQLite tracking bootstrap
+A lightweight registry is also updated at:
+
+- `artifacts/registry.json`
+
+## MLflow tracking
+
+By default the project resolves `tracking.uri: ./mlruns` into:
+
+- tracking database: `mlruns/mlflow.db`
+- artifact store: `mlruns/artifacts/`
+
+This uses **SQLite + filesystem artifacts** rather than the deprecated pure
+file-store mode in MLflow 3.x. Less pain, fewer ritual incantations.
+
+## Architecture at a glance
+
+Core modules:
+
+- `src/bc_mlops_showcase/config.py` — config loading and backend resolution
+- `src/bc_mlops_showcase/data.py` — dataset loading
+- `src/bc_mlops_showcase/modeling.py` — backend-specific training and scoring
+- `src/bc_mlops_showcase/tracking.py` — MLflow bootstrap and run lifecycle
 - `src/bc_mlops_showcase/pipeline.py` — orchestration, metrics, artifacts, registry
-- `src/bc_mlops_showcase/inference.py` — backend-agnostic scoring
-- `configs/train.yaml` — sklearn baseline
-- `configs/train-pytorch.yaml` — PyTorch baseline
+- `src/bc_mlops_showcase/inference.py` — backend-agnostic offline scoring
+- `src/bc_mlops_showcase/validation.py` — quality gate enforcement
+- `src/bc_mlops_showcase/reporting.py` — model card generation
 
-## Deep learning base recommendation
+If you want the fuller diagrams and interaction flow, the Sphinx docs have those.
+I know, reading documentation: scandalous.
 
-The current PyTorch MLP is the first deep-learning-ready backend. The recommended base solution for expansion is:
+## Development commands
 
-- keep the **same CLI contract**
-- add new backends under the same `model.kind` pattern
-- keep hyperparameters entirely under `model.params`
-- log every run through the same MLflow layer
-- standardize every backend on `train -> artifact -> predict -> report`
+The `Makefile` wraps the most common flows:
 
-That means adding a deeper MLP, tabular transformer, or Lightning-style trainer later should be a backend module addition, not a pipeline rewrite. Miraculous, I know.
+```bash
+make install
+make test
+make train
+make compare
+make docs
+```
 
-## Repo structure
+Equivalent direct commands use `uv run ...` throughout.
 
-- `src/bc_mlops_showcase/` — package code
+## Repository layout
+
+- `src/bc_mlops_showcase/` — application code
 - `tests/` — regression tests
-- `configs/` — training and quality-gate config
-- `sample-inputs/` — example inference payloads
-- `.github/workflows/` — CI/CD and retraining automation
-- `artifacts/` — generated outputs (gitignored except placeholders)
-- `mlruns/` — local MLflow SQLite database and artifacts
+- `configs/` — training and quality gate config
+- `sample-inputs/` — sample inference payloads
+- `docs/source/` — Sphinx documentation source
+- `.github/workflows/` — CI/CD and Pages deployment workflows
+
+## CI/CD
+
+GitHub Actions currently handles:
+
+- code quality checks
+- test execution
+- package builds
+- smoke training
+- release workflow
+- documentation build and GitHub Pages deployment
+
+## License
+
+MIT
