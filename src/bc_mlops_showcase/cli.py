@@ -7,8 +7,6 @@ import json
 from collections.abc import Sequence
 from pathlib import Path
 
-from .tui import render_dashboard_text
-
 
 def build_parser() -> argparse.ArgumentParser:
     """Build the top-level argument parser for the project CLI."""
@@ -30,6 +28,11 @@ def build_parser() -> argparse.ArgumentParser:
     dashboard_parser.add_argument("--registry", type=Path, default=Path("artifacts/registry.json"))
     dashboard_parser.add_argument("--run-root", type=Path, default=Path("artifacts/runs"))
     dashboard_parser.add_argument("--width", type=int, default=110)
+    dashboard_parser.add_argument(
+        "--interactive",
+        action="store_true",
+        help="Launch the interactive Textual command deck instead of static text output",
+    )
 
     predict_parser = subparsers.add_parser("predict", help="Score records with a trained model")
     predict_parser.add_argument("--model", type=Path, required=True)
@@ -73,6 +76,11 @@ def main(argv: Sequence[str] | None = None) -> int:
         return _print_registry(args.registry)
 
     if args.command == "dashboard":
+        from .tui import launch_dashboard_app, render_dashboard_text
+
+        if args.interactive:
+            launch_dashboard_app(registry_path=args.registry, run_root=args.run_root)
+            return 0
         print(render_dashboard_text(args.registry, args.run_root, width=args.width), end="")
         return 0
 
