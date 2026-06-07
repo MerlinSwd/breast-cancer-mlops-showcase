@@ -27,6 +27,7 @@ from textual.widgets import (
     Static,
 )
 
+from .config import MODEL_KIND_OPTIONS
 from .designer import (
     DesignerActionResult,
     DesignerDraft,
@@ -37,8 +38,15 @@ from .designer import (
     save_designer_draft,
     validate_designer_draft,
 )
+from .model_designer import (
+    ModelDesignerDraft,
+    apply_model_designer_draft_to_run_draft,
+    build_default_model_designer_draft,
+    render_model_designer_preview_text,
+    validate_model_designer_draft,
+)
 
-RunMode = Literal["runs", "configs", "designer"]
+RunMode = Literal["runs", "configs", "run-designer", "model-designer"]
 RunDetailMode = Literal["run", "artifacts", "actions", "compare", "help"]
 HealthFilter = Literal[
     "all",
@@ -82,7 +90,8 @@ ARTIFACT_KEYS = (
 MODE_OPTIONS: tuple[tuple[str, RunMode], ...] = (
     ("Runs", "runs"),
     ("Configs", "configs"),
-    ("Designer", "designer"),
+    ("Run Designer", "run-designer"),
+    ("Model Designer", "model-designer"),
 )
 SORT_OPTIONS: tuple[tuple[str, str], ...] = (
     ("F1", "f1"),
@@ -108,13 +117,7 @@ DESIGNER_DATASET_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Built-in breast cancer", "sklearn_breast_cancer"),
     ("CSV tabular binary", "csv_tabular_binary"),
 )
-DESIGNER_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
-    ("Logistic regression", "sklearn_logreg"),
-    ("Random forest", "sklearn_random_forest"),
-    ("XGBoost", "xgboost_classifier"),
-    ("Hist gradient boosting", "sklearn_hist_gradient_boosting"),
-    ("PyTorch MLP", "pytorch_mlp"),
-)
+DESIGNER_MODEL_OPTIONS: tuple[tuple[str, str], ...] = MODEL_KIND_OPTIONS
 DESIGNER_DEVICE_OPTIONS: tuple[tuple[str, str], ...] = (
     ("Auto", "auto"),
     ("CPU", "cpu"),
@@ -314,6 +317,7 @@ class MerlinDashboardApp(App[None]):
         Binding("h", "toggle_health_filter", "Health"),
         Binding("tab", "switch_mode", "Mode", priority=True),
         Binding("n", "open_run_designer", "Design run"),
+        Binding("b", "open_model_designer", "Design model"),
         Binding("enter", "open_detail", "Detail", priority=True),
         Binding("a", "show_actions", "Actions"),
         Binding("c", "compare_selected_run", "Compare"),
@@ -352,6 +356,12 @@ class MerlinDashboardApp(App[None]):
         self.designer_preview_text = render_designer_preview_text(self.designer_draft)
         self.designer_dirty = False
         self._is_syncing_designer = False
+        self.model_designer_draft = build_default_model_designer_draft()
+        self.model_designer_preview_text = render_model_designer_preview_text(
+            self.model_designer_draft
+        )
+        self.model_designer_dirty = False
+        self._is_syncing_model_designer = False
         self.last_action_result = ActionResult(
             ok=True,
             title="Idle",
@@ -398,6 +408,7 @@ class MerlinDashboardApp(App[None]):
                     yield Button("Compare", id="compare-button", classes="toolbar-button")
                     yield Button("Help", id="help-button", classes="toolbar-button")
                     yield Button("Design Run", id="design-run-button", classes="toolbar-button")
+                    yield Button("Design Model", id="design-model-button", classes="toolbar-button")
             with Vertical(classes="control-group -last"):
                 yield Static("Run Actions", classes="section-title")
                 with Horizontal():
@@ -487,6 +498,92 @@ class MerlinDashboardApp(App[None]):
                             id="designer-tracking-experiment-name",
                         )
                         yield Input(placeholder="Model params JSON", id="designer-model-params")
+                    with Vertical(id="model-designer-form"):
+                        yield Static("Model Designer", classes="section-title")
+                        with Horizontal():
+                            yield Button(
+                                "Load Model Defaults",
+                                id="model-designer-load-defaults-button",
+                                classes="toolbar-button",
+                            )
+                            yield Button(
+                                "Preview Model YAML",
+                                id="model-designer-preview-button",
+                                classes="toolbar-button",
+                            )
+                            yield Button(
+                                "Apply To Run Draft",
+                                id="model-designer-apply-button",
+                                classes="toolbar-button",
+                            )
+                        yield Select(
+                            DESIGNER_MODEL_OPTIONS,
+                            value=self.model_designer_draft.model_kind,
+                            allow_blank=False,
+                            id="model-designer-kind",
+                        )
+                        yield Select(
+                            DESIGNER_DEVICE_OPTIONS,
+                            value=self.model_designer_draft.device,
+                            allow_blank=False,
+                            id="model-designer-device",
+                        )
+                        yield Input(
+                            placeholder="Logreg C",
+                            id="model-designer-logreg-c",
+                        )
+                        yield Input(
+                            placeholder="Logreg max_iter",
+                            id="model-designer-logreg-max-iter",
+                        )
+                        yield Input(
+                            placeholder="RF n_estimators",
+                            id="model-designer-rf-n-estimators",
+                        )
+                        yield Input(
+                            placeholder="RF max_depth",
+                            id="model-designer-rf-max-depth",
+                        )
+                        yield Input(
+                            placeholder="RF min_samples_leaf",
+                            id="model-designer-rf-min-samples-leaf",
+                        )
+                        yield Input(
+                            placeholder="HGB learning_rate",
+                            id="model-designer-hgb-learning-rate",
+                        )
+                        yield Input(
+                            placeholder="HGB max_iter",
+                            id="model-designer-hgb-max-iter",
+                        )
+                        yield Input(
+                            placeholder="HGB max_depth",
+                            id="model-designer-hgb-max-depth",
+                        )
+                        yield Input(
+                            placeholder="HGB min_samples_leaf",
+                            id="model-designer-hgb-min-samples-leaf",
+                        )
+                        yield Input(
+                            placeholder="MLP hidden_dims",
+                            id="model-designer-mlp-hidden-dims",
+                        )
+                        yield Input(
+                            placeholder="MLP epochs",
+                            id="model-designer-mlp-epochs",
+                        )
+                        yield Input(
+                            placeholder="MLP batch_size",
+                            id="model-designer-mlp-batch-size",
+                        )
+                        yield Input(
+                            placeholder="MLP learning_rate",
+                            id="model-designer-mlp-learning-rate",
+                        )
+                        yield Input(
+                            placeholder="MLP dropout",
+                            id="model-designer-mlp-dropout",
+                        )
                 with Vertical(id="task-pane"):
                     yield Static("Task Status", classes="section-title")
                     yield Static("", id="task-status")
@@ -497,7 +594,9 @@ class MerlinDashboardApp(App[None]):
         self._refresh_view(query="")
         self._refresh_controls()
         self._refresh_designer_form()
+        self._refresh_model_designer_form()
         self._set_designer_visibility()
+        self._set_model_designer_visibility()
         self.query_one("#run-list", ListView).focus()
         self._refresh_status(
             "Ready. / filter • tab mode • n designer • enter detail • a actions • ? help."
@@ -510,13 +609,17 @@ class MerlinDashboardApp(App[None]):
     def action_switch_mode(self) -> None:
         next_mode = {
             "runs": "configs",
-            "configs": "designer",
-            "designer": "runs",
+            "configs": "run-designer",
+            "run-designer": "model-designer",
+            "model-designer": "runs",
         }[self.mode]
         self._set_mode(next_mode)
 
     def action_open_run_designer(self) -> None:
-        self._set_mode("designer")
+        self._set_mode("run-designer")
+
+    def action_open_model_designer(self) -> None:
+        self._set_mode("model-designer")
 
     def action_cycle_sort(self) -> None:
         if self.mode != "runs":
@@ -614,6 +717,9 @@ class MerlinDashboardApp(App[None]):
         if event.input.id and event.input.id.startswith("designer-"):
             self._update_designer_draft_from_widgets()
             return
+        if event.input.id and event.input.id.startswith("model-designer-"):
+            self._update_model_designer_draft_from_widgets()
+            return
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
         if event.input.id == "run-filter":
@@ -621,6 +727,9 @@ class MerlinDashboardApp(App[None]):
             return
         if event.input.id and event.input.id.startswith("designer-"):
             self._update_designer_draft_from_widgets()
+            return
+        if event.input.id and event.input.id.startswith("model-designer-"):
+            self._update_model_designer_draft_from_widgets()
             return
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
@@ -647,6 +756,8 @@ class MerlinDashboardApp(App[None]):
             self.action_toggle_help()
         elif button_id == "design-run-button":
             self.action_open_run_designer()
+        elif button_id == "design-model-button":
+            self.action_open_model_designer()
         elif button_id == "validate-button":
             self.action_validate_selected_run()
         elif button_id == "report-button":
@@ -667,6 +778,12 @@ class MerlinDashboardApp(App[None]):
             self._save_designer_draft()
         elif button_id == "designer-launch-button":
             self._launch_designer_draft()
+        elif button_id == "model-designer-load-defaults-button":
+            self._load_model_designer_defaults()
+        elif button_id == "model-designer-preview-button":
+            self._preview_model_designer_draft()
+        elif button_id == "model-designer-apply-button":
+            self._apply_model_designer_draft_to_run_designer()
 
     def on_select_changed(self, event: Select.Changed) -> None:
         if event.select.id is None:
@@ -684,6 +801,11 @@ class MerlinDashboardApp(App[None]):
             if self._is_syncing_designer:
                 return
             self._update_designer_draft_from_widgets()
+            return
+        if event.select.id in {"model-designer-kind", "model-designer-device"}:
+            if self._is_syncing_model_designer:
+                return
+            self._update_model_designer_draft_from_widgets()
             return
         if self._is_syncing_controls:
             return
@@ -722,7 +844,7 @@ class MerlinDashboardApp(App[None]):
         )
         self.designer_preview_text = render_designer_preview_text(self.designer_draft)
         self.designer_dirty = False
-        self._set_mode("designer")
+        self._set_mode("run-designer")
         self._refresh_designer_form()
         self._refresh_details()
         self._refresh_status(f"Cloned {config_name} into the run designer.")
@@ -859,8 +981,57 @@ class MerlinDashboardApp(App[None]):
         ).value = self.designer_draft.model_params_json
         self._is_syncing_designer = False
 
+    def _refresh_model_designer_form(self) -> None:
+        self._is_syncing_model_designer = True
+        self.query_one("#model-designer-kind", Select).value = self.model_designer_draft.model_kind
+        self.query_one("#model-designer-device", Select).value = self.model_designer_draft.device
+        self.query_one("#model-designer-logreg-c", Input).value = self.model_designer_draft.logreg_c
+        self.query_one(
+            "#model-designer-logreg-max-iter", Input
+        ).value = self.model_designer_draft.logreg_max_iter
+        self.query_one(
+            "#model-designer-rf-n-estimators", Input
+        ).value = self.model_designer_draft.rf_n_estimators
+        self.query_one(
+            "#model-designer-rf-max-depth", Input
+        ).value = self.model_designer_draft.rf_max_depth
+        self.query_one(
+            "#model-designer-rf-min-samples-leaf", Input
+        ).value = self.model_designer_draft.rf_min_samples_leaf
+        self.query_one(
+            "#model-designer-hgb-learning-rate", Input
+        ).value = self.model_designer_draft.hgb_learning_rate
+        self.query_one(
+            "#model-designer-hgb-max-iter", Input
+        ).value = self.model_designer_draft.hgb_max_iter
+        self.query_one(
+            "#model-designer-hgb-max-depth", Input
+        ).value = self.model_designer_draft.hgb_max_depth
+        self.query_one(
+            "#model-designer-hgb-min-samples-leaf", Input
+        ).value = self.model_designer_draft.hgb_min_samples_leaf
+        self.query_one(
+            "#model-designer-mlp-hidden-dims", Input
+        ).value = self.model_designer_draft.mlp_hidden_dims
+        self.query_one(
+            "#model-designer-mlp-epochs", Input
+        ).value = self.model_designer_draft.mlp_epochs
+        self.query_one(
+            "#model-designer-mlp-batch-size", Input
+        ).value = self.model_designer_draft.mlp_batch_size
+        self.query_one(
+            "#model-designer-mlp-learning-rate", Input
+        ).value = self.model_designer_draft.mlp_learning_rate
+        self.query_one(
+            "#model-designer-mlp-dropout", Input
+        ).value = self.model_designer_draft.mlp_dropout
+        self._is_syncing_model_designer = False
+
     def _set_designer_visibility(self) -> None:
-        self.query_one("#designer-form", Vertical).display = self.mode == "designer"
+        self.query_one("#designer-form", Vertical).display = self.mode == "run-designer"
+
+    def _set_model_designer_visibility(self) -> None:
+        self.query_one("#model-designer-form", Vertical).display = self.mode == "model-designer"
 
     def _update_designer_draft_from_widgets(self) -> None:
         if self._is_syncing_designer:
@@ -887,6 +1058,80 @@ class MerlinDashboardApp(App[None]):
         )
         self.designer_dirty = True
 
+    def _update_model_designer_draft_from_widgets(self) -> None:
+        if self._is_syncing_model_designer:
+            return
+        self.model_designer_draft = ModelDesignerDraft(
+            model_kind=str(self.query_one("#model-designer-kind", Select).value),
+            device=str(self.query_one("#model-designer-device", Select).value),
+            logreg_c=self.query_one("#model-designer-logreg-c", Input).value,
+            logreg_max_iter=self.query_one("#model-designer-logreg-max-iter", Input).value,
+            rf_n_estimators=self.query_one("#model-designer-rf-n-estimators", Input).value,
+            rf_max_depth=self.query_one("#model-designer-rf-max-depth", Input).value,
+            rf_min_samples_leaf=self.query_one("#model-designer-rf-min-samples-leaf", Input).value,
+            hgb_learning_rate=self.query_one("#model-designer-hgb-learning-rate", Input).value,
+            hgb_max_iter=self.query_one("#model-designer-hgb-max-iter", Input).value,
+            hgb_max_depth=self.query_one("#model-designer-hgb-max-depth", Input).value,
+            hgb_min_samples_leaf=self.query_one(
+                "#model-designer-hgb-min-samples-leaf", Input
+            ).value,
+            mlp_hidden_dims=self.query_one("#model-designer-mlp-hidden-dims", Input).value,
+            mlp_epochs=self.query_one("#model-designer-mlp-epochs", Input).value,
+            mlp_batch_size=self.query_one("#model-designer-mlp-batch-size", Input).value,
+            mlp_learning_rate=self.query_one("#model-designer-mlp-learning-rate", Input).value,
+            mlp_dropout=self.query_one("#model-designer-mlp-dropout", Input).value,
+            source_name=self.model_designer_draft.source_name,
+        )
+        self.model_designer_dirty = True
+
+    def _load_model_designer_defaults(self) -> None:
+        self._update_model_designer_draft_from_widgets()
+        self.model_designer_draft = build_default_model_designer_draft(
+            str(self.query_one("#model-designer-kind", Select).value)
+        )
+        self.model_designer_preview_text = render_model_designer_preview_text(
+            self.model_designer_draft
+        )
+        self.model_designer_dirty = False
+        self._refresh_model_designer_form()
+        self._refresh_details()
+        self._refresh_status("Loaded default model parameters for the selected family.")
+
+    def _preview_model_designer_draft(self) -> None:
+        self._update_model_designer_draft_from_widgets()
+        self.model_designer_preview_text = render_model_designer_preview_text(
+            self.model_designer_draft
+        )
+        self._refresh_details()
+        self._refresh_status("Rendered normalized model preview.")
+
+    def _apply_model_designer_draft_to_run_designer(self) -> None:
+        self._update_model_designer_draft_from_widgets()
+        result = validate_model_designer_draft(self.model_designer_draft)
+        if not result.ok:
+            self.last_action_result = ActionResult(
+                ok=False,
+                title="Model draft invalid",
+                message="Model designer validation failed.",
+                output="\n".join(result.errors),
+            )
+            self._refresh_task_status()
+            self._refresh_status(self.last_action_result.message)
+            return
+        self.designer_draft = apply_model_designer_draft_to_run_draft(
+            self.model_designer_draft, self.designer_draft
+        )
+        self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+        self._refresh_designer_form()
+        self.last_action_result = ActionResult(
+            ok=True,
+            title="Model applied",
+            message="Applied model draft to the run designer.",
+            output=self.designer_draft.model_params_json,
+        )
+        self._refresh_task_status()
+        self._refresh_status(self.last_action_result.message)
+
     def _refresh_controls(self) -> None:
         self._is_syncing_controls = True
         self.query_one("#mode-select", Select).value = self.mode
@@ -898,12 +1143,16 @@ class MerlinDashboardApp(App[None]):
         if mode == self.mode:
             self._refresh_controls()
             self._set_designer_visibility()
+            self._set_model_designer_visibility()
             return
         self.mode = mode
         self.detail_mode = "run"
         self._set_designer_visibility()
-        if self.mode == "designer":
+        self._set_model_designer_visibility()
+        if self.mode == "run-designer":
             self._refresh_designer_form()
+        if self.mode == "model-designer":
+            self._refresh_model_designer_form()
         self._refresh_view(query=self._current_query())
         self._refresh_status("Switched workspace lane.")
 
@@ -952,6 +1201,7 @@ class MerlinDashboardApp(App[None]):
         self._refresh_task_status()
         self._refresh_controls()
         self._set_designer_visibility()
+        self._set_model_designer_visibility()
 
     def _refresh_list(self, query: str) -> None:
         run_list = self.query_one("#run-list", ListView)
@@ -1011,7 +1261,9 @@ class MerlinDashboardApp(App[None]):
 
         selected_index = 0
         for index, config_view in enumerate(config_views):
-            prefix = "Template" if self.mode == "designer" else config_view.name
+            prefix = (
+                "Template" if self.mode in {"run-designer", "model-designer"} else config_view.name
+            )
             label = f"{prefix} [{config_view.model_kind}] dataset={config_view.dataset_kind}"
             run_list.append(ListItem(Label(label), name=config_view.name))
             if config_view.name == selected_name:
@@ -1044,17 +1296,30 @@ class MerlinDashboardApp(App[None]):
                 )
             )
             return
+        if self.mode == "run-designer":
+            overview.update(
+                "\n".join(
+                    [
+                        "Run Designer",
+                        f"Selected template: {self.selected_config_name or 'defaults'}",
+                        f"Draft slug: {self.designer_draft.config_slug}",
+                        f"Dirty: {'yes' if self.designer_dirty else 'no'}",
+                        (
+                            "Buttons: Load Defaults • Clone Config • Preview YAML • "
+                            "Validate Draft • Save Config • Launch Run"
+                        ),
+                    ]
+                )
+            )
+            return
         overview.update(
             "\n".join(
                 [
-                    "Run Designer",
+                    "Model Designer",
                     f"Selected template: {self.selected_config_name or 'defaults'}",
-                    f"Draft slug: {self.designer_draft.config_slug}",
-                    f"Dirty: {'yes' if self.designer_dirty else 'no'}",
-                    (
-                        "Buttons: Load Defaults • Clone Config • Preview YAML • "
-                        "Validate Draft • Save Config • Launch Run"
-                    ),
+                    f"Model family: {self.model_designer_draft.model_kind}",
+                    f"Dirty: {'yes' if self.model_designer_dirty else 'no'}",
+                    "Buttons: Load Model Defaults • Preview Model YAML • Apply To Run Draft",
                 ]
             )
         )
@@ -1083,8 +1348,12 @@ class MerlinDashboardApp(App[None]):
             details.update(build_help_text())
             return
 
-        if self.mode == "designer":
+        if self.mode == "run-designer":
             details.update(self.designer_preview_text)
+            return
+
+        if self.mode == "model-designer":
+            details.update(self.model_designer_preview_text)
             return
 
         if self.mode == "configs":
