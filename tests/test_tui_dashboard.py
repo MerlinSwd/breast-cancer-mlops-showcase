@@ -3,6 +3,8 @@ import subprocess
 import sys
 from pathlib import Path
 
+import pandas as pd
+
 from bc_mlops_showcase.cli import main
 from bc_mlops_showcase.tui import render_dashboard_text
 
@@ -28,16 +30,29 @@ def _seed_run(run_root: Path, run_name: str, *, model_artifact: str, with_model_
                 "timestamp": "20260606T155803Z",
                 "train_rows": 455,
                 "test_rows": 114,
+                "evaluation": {"mode": "stratified_k_fold", "folds": 5},
+                "dataset": {
+                    "kind": "csv_tabular_binary",
+                    "path": "data/breast-cancer-coimbra.csv",
+                    "target_column": "Classification",
+                },
                 "model": {
                     "kind": "sklearn_logreg",
                     "artifact": model_artifact,
                     "runtime": {"framework": "sklearn", "device": "cpu"},
                 },
-                "mlflow": {"run_id": "run-123"},
+                "mlflow": {"run_id": "run-123", "tracking_uri": "sqlite:///mlruns/mlflow.db"},
             }
         )
     )
     (run_dir / model_artifact).write_text("model-bytes-go-here")
+    (run_dir / "config.resolved.yaml").write_text("model:\n  kind: sklearn_logreg\n")
+    pd.DataFrame(
+        [
+            {"feature": "radius_mean", "importance": 0.42},
+            {"feature": "texture_mean", "importance": 0.25},
+        ]
+    ).to_csv(run_dir / "feature_importance.csv", index=False)
     if with_model_card:
         (run_dir / "MODEL_CARD.md").write_text("# Model Card\n")
     return run_dir
@@ -88,6 +103,7 @@ def test_render_dashboard_text_surfaces_branding_and_artifact_health(tmp_path: P
     assert "MERLIN // ONCO-OPS COMMAND DECK" in output
     assert "Champion Run" in output
     assert "baseline-logreg-20260606T155802Z" in output
+    assert "Evaluation: stratified_k_fold (5 folds)" in output
     assert "Artifact Health" in output
     assert "OK" in output
     assert "sklearn_logreg" in output
@@ -218,6 +234,248 @@ def test_render_dashboard_text_tolerates_missing_metrics_in_registry(tmp_path: P
 
     assert "broken-run" in output
     assert "n/a" in output
+
+
+def test_render_dashboard_text_surfaces_registry_disk_drift(tmp_path: Path) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    _seed_run(run_root, "tracked-run", model_artifact="model.joblib", with_model_card=True)
+    _seed_run(run_root, "orphan-run", model_artifact="model.joblib", with_model_card=True)
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "tracked-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    },
+                    {
+                        "run_name": "missing-run",
+                        "accuracy": 0.8,
+                        "f1": 0.79,
+                        "roc_auc": 0.81,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155804Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-456",
+                    },
+                ]
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=100)
+
+    assert "Registry / Disk Drift" in output
+    assert "Orphan run dirs: 1" in output
+    assert "Registry entries without run dirs: 1" in output
+    assert "orphan-run" in output
+    assert "missing-run" in output
+
+
+def test_render_dashboard_text_includes_compare_view_rank_and_delta(tmp_path: Path) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    _seed_run(
+        run_root,
+        "champion-run",
+        model_artifact="model.joblib",
+        with_model_card=True,
+    )
+    _seed_run(
+        run_root,
+        "runner-up-run",
+        model_artifact="model.joblib",
+        with_model_card=False,
+    )
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "champion-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    },
+                    {
+                        "run_name": "runner-up-run",
+                        "accuracy": 0.9785,
+                        "f1": 0.9801,
+                        "roc_auc": 0.9930,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155804Z",
+                        "model_kind": "sklearn_random_forest",
+                        "mlflow_run_id": "run-456",
+                    },
+                ],
+                "best_run": {
+                    "run_name": "champion-run",
+                    "accuracy": 0.9825,
+                    "f1": 0.9861,
+                    "roc_auc": 0.9954,
+                    "experiment_name": "baseline-logreg",
+                    "timestamp": "20260606T155803Z",
+                    "model_kind": "sklearn_logreg",
+                    "mlflow_run_id": "run-123",
+                },
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=120)
+
+    assert "Compare View" in output
+    assert "Rank" in output
+    assert "ΔF1 vs champ" in output
+    assert "F1 σ" in output
+    assert "champion-run" in output
+    assert "runner-up-run" in output
+    assert "+0.0000" in output
+    assert "-0.0060" in output
+
+
+def test_render_dashboard_text_surfaces_kfold_dispersion_in_compare_view(tmp_path: Path) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    champion_dir = _seed_run(
+        run_root,
+        "champion-run",
+        model_artifact="model.joblib",
+        with_model_card=True,
+    )
+    challenger_dir = _seed_run(
+        run_root,
+        "challenger-run",
+        model_artifact="model.joblib",
+        with_model_card=True,
+    )
+    for run_dir, f1_std in ((champion_dir, 0.0123), (challenger_dir, 0.0456)):
+        metadata = json.loads((run_dir / "metadata.json").read_text())
+        metadata["evaluation"] = {"mode": "stratified_k_fold", "folds": 5}
+        (run_dir / "metadata.json").write_text(json.dumps(metadata))
+        (run_dir / "fold_metrics.json").write_text(
+            json.dumps(
+                {
+                    "evaluation_mode": "stratified_k_fold",
+                    "fold_count": 5,
+                    "summary": {
+                        "f1": {"mean": 0.98, "std": f1_std},
+                    },
+                }
+            )
+        )
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "champion-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    },
+                    {
+                        "run_name": "challenger-run",
+                        "accuracy": 0.9785,
+                        "f1": 0.9801,
+                        "roc_auc": 0.9930,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155804Z",
+                        "model_kind": "sklearn_random_forest",
+                        "mlflow_run_id": "run-456",
+                    },
+                ],
+                "best_run": {
+                    "run_name": "champion-run",
+                    "accuracy": 0.9825,
+                    "f1": 0.9861,
+                    "roc_auc": 0.9954,
+                    "experiment_name": "baseline-logreg",
+                    "timestamp": "20260606T155803Z",
+                    "model_kind": "sklearn_logreg",
+                    "mlflow_run_id": "run-123",
+                },
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=120)
+
+    assert "F1 σ" in output
+    assert "0.0123" in output
+    assert "0.0456" in output
+
+
+def test_render_dashboard_text_suggests_validate_and_report_commands_for_best_run(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    _seed_run(
+        run_root,
+        "champion-run",
+        model_artifact="model.joblib",
+        with_model_card=False,
+    )
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "champion-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    }
+                ],
+                "best_run": {
+                    "run_name": "champion-run",
+                    "accuracy": 0.9825,
+                    "f1": 0.9861,
+                    "roc_auc": 0.9954,
+                    "experiment_name": "baseline-logreg",
+                    "timestamp": "20260606T155803Z",
+                    "model_kind": "sklearn_logreg",
+                    "mlflow_run_id": "run-123",
+                },
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=120)
+
+    assert "bc-mlops validate --metrics" in output
+    assert "champion-run/metrics.json" in output
+    assert "configs/quality_gates.yaml" in output
+    assert "bc-mlops report --run-dir" in output
+    assert "champion-run/MODEL_CARD.md" in output
 
 
 def test_dashboard_command_imports_without_torch_for_registry_only_usage(tmp_path: Path) -> None:

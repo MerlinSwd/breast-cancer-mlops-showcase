@@ -48,6 +48,9 @@ packages = ["src/bc_mlops_showcase"]
 [tool.pytest.ini_options]
 addopts = "-q --cov=bc_mlops_showcase --cov-report=term-missing"
 testpaths = ["tests"]
+filterwarnings = [
+  'ignore:SelectableGroups dict interface is deprecated\. Use select\.:DeprecationWarning:opentelemetry\.util\._importlib_metadata',
+]
 
 [tool.ruff]
 line-length = 100

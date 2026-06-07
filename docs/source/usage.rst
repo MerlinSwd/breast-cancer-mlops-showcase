@@ -13,7 +13,7 @@ The package exposes a single CLI entrypoint named ``bc-mlops``.
 Available subcommands:
 
 - ``train``: train a configured backend and write run artifacts
-- ``compare``: inspect the lightweight experiment registry
+- ``compare``: inspect the lightweight experiment registry or print a quick text leaderboard
 - ``dashboard``: render a branded terminal dashboard for run metrics and artifact health
 - ``validate``: enforce quality gates against a metrics file
 - ``predict``: score JSON or CSV payloads against a trained artifact
@@ -33,12 +33,34 @@ Train the PyTorch backend
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
+Train the harder Coimbra benchmark with random forest
+-----------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+
+Train the harder Coimbra benchmark with histogram gradient boosting
+-------------------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
+
+Train the harder Coimbra benchmark with stratified k-fold evaluation
+--------------------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
+
 Compare runs
 ------------
 
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
+   uv run bc-mlops compare --registry artifacts/registry.json --summary
 
 Open the terminal dashboard
 ---------------------------
@@ -60,14 +82,29 @@ Open the interactive command deck
      --interactive
 
 The dashboard highlights the current champion run, prints a sorted leaderboard,
-checks whether each run directory still contains the expected artifacts, and
-points the operator at the next command worth running.
+checks whether each run directory still contains the expected artifacts, surfaces
+registry-versus-disk drift such as orphan run directories or stale registry
+entries, and points the operator at the next command worth running.
 
 The interactive deck adds live filtering by run name or model kind, keyboard
 navigation through the run list, an overview pane for deck health and sort
-state, a detail pane with metric deltas versus the champion, an unhealthy-only
-filter with ``h``, sort cycling with ``s``, filter focus with ``/``, reload
-support with ``r``, and quit with ``q``.
+state, a richer run dossier with timestamp, train/test rows, runtime, dataset,
+MLflow identifiers, and artifact-path health, cross-validation stability
+summaries, and a detail pane with metric deltas versus the champion.
+
+It also exposes executable in-TUI operator actions for ``validate``,
+``report``, ``predict``, and ``retrain``; a task-status pane with
+success/failure feedback and action output previews; artifact drill-down for
+``metrics.json``, ``metadata.json``, ``MODEL_CARD.md``,
+``config.resolved.yaml``, ``fold_metrics.json``, and
+``feature_importance.csv``; a config-browser mode; a run-to-run compare mode;
+and richer triage filters for unhealthy runs, missing cards, missing models,
+missing metrics, registry drift, and cross-validation-only views.
+
+Use ``s`` to cycle sort order, ``h`` to cycle triage filters, ``tab`` to switch
+between runs and configs, ``enter`` to cycle details and artifacts, ``a`` to
+open the action catalog, ``c`` to pin a compare anchor, ``?`` for help, ``/``
+to focus the filter, ``r`` to reload, and ``q`` to quit.
 
 Validate a trained run
 ----------------------
@@ -108,9 +145,14 @@ Each training run creates a timestamped directory containing:
 - the serialized model artifact
 - ``metrics.json``
 - ``metadata.json``
+- optional ``fold_metrics.json`` with per-fold metrics plus mean/std summaries for stratified k-fold evaluation
 - ``config.resolved.yaml``
 - optional ``feature_importance.csv``
 - generated ``MODEL_CARD.md`` when requested
 
 MLflow runs are also logged under the configured tracking backend, which defaults
 to a local SQLite database plus filesystem artifact store.
+
+For small datasets such as Coimbra, set ``evaluation.mode: stratified_k_fold`` in
+the training config to score the run from out-of-fold predictions while still
+writing one final fitted sklearn artifact for downstream inference.

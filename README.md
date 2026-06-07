@@ -2,7 +2,8 @@
 
 An end-to-end **tabular MLOps** project for classifying breast cancer tumors with a
 config-driven training pipeline, **MLflow tracking**, **uv-managed environments**,
-and swappable model backends for both **scikit-learn** and **PyTorch**.
+and swappable model backends for **scikit-learn** and **PyTorch** across both the
+built-in Wisconsin diagnostic dataset and a harder Coimbra benchmark.
 
 This repository is meant to feel like a small but real ML platform rather than a
 single notebook that accidentally escaped into version control.
@@ -11,7 +12,9 @@ single notebook that accidentally escaped into version control.
 
 - trains reproducible models from YAML configuration
 - switches model families through `model.kind` instead of CLI rewrites
-- supports a fast `sklearn_logreg` baseline and a `pytorch_mlp` backend
+- switches datasets through `dataset.kind` instead of pipeline rewrites
+- supports `sklearn_logreg`, `sklearn_random_forest`, `sklearn_hist_gradient_boosting`, and `pytorch_mlp` backends
+- benchmarks on the built-in sklearn breast-cancer dataset and the Coimbra CSV dataset
 - logs runs, metrics, params, and artifacts to **MLflow**
 - validates trained models against configurable quality gates
 - generates run artifacts and markdown model cards
@@ -60,12 +63,16 @@ uv run python -m sphinx -W -b html docs/source docs/_build/html
 ```bash
 uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
 ```
 
 ### 5. Inspect results
 
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
+uv run bc-mlops compare --registry artifacts/registry.json --summary
 uv run bc-mlops dashboard --registry artifacts/registry.json --run-root artifacts/runs
 ```
 
@@ -81,6 +88,7 @@ uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
+uv run bc-mlops compare --registry artifacts/registry.json --summary
 ```
 
 ### Open the branded terminal dashboard
@@ -104,17 +112,29 @@ The dashboard gives you a quick terminal "bridge view" of:
 
 - the current champion run
 - a metric leaderboard across tracked runs
+- evaluation strategy visibility for tracked runs, including stratified k-fold champion summaries
 - artifact health checks for model files, metrics, and model cards
-- operator hints for the next useful command
+- fold-level cross-validation summaries for stratified k-fold Coimbra runs via `fold_metrics.json`
+- compare-view stability signals, including per-run cross-validation F1 dispersion (`F1 σ`) in the dashboard and dossier
+- a lightweight `bc-mlops compare --summary` leaderboard for rank, evaluation mode, champion deltas, and k-fold stability without opening the full dashboard
+- registry-versus-disk drift, including orphan run directories and stale registry entries
+- operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
 
 The interactive deck adds:
 
 - live filtering by run name or model kind
 - keyboard navigation across tracked runs
 - an overview pane with champion, visible-run counts, current sort, and search state
+- a richer run dossier with timestamp, train/test rows, runtime, dataset, MLflow IDs, and artifact paths
+- cross-validation stability summaries in the selected run dossier when `fold_metrics.json` is present
 - a detail pane for the selected run with metric deltas vs the champion
-- unhealthy-only mode to isolate runs missing artifacts or model cards
-- sort cycling with `s`, health filtering with `h`, reload with `r`, filtering with `/`, and quit with `q`
+- executable in-TUI operator actions for `validate`, `report`, `predict`, and `retrain`
+- a task-status pane with success/failure feedback and action output previews
+- artifact drill-down for `metrics.json`, `metadata.json`, `MODEL_CARD.md`, `config.resolved.yaml`, `fold_metrics.json`, and `feature_importance.csv`
+- a config-browser mode so you can inspect training YAMLs without leaving the TUI
+- run-to-run compare mode for metric deltas and artifact-issue differences
+- failure-first triage filters, including unhealthy runs, missing cards, missing models, missing metrics, registry drift, and cross-validation-only views
+- sort cycling with `s`, health filtering with `h`, mode switching with `tab`, detail/artifact cycling with `enter`, actions with `a`, compare with `c`, help with `?`, reload with `r`, filtering with `/`, and quit with `q`
 
 ### Validate against quality gates
 
@@ -144,6 +164,10 @@ uv run bc-mlops report \
   --output artifacts/runs/<run-name>/MODEL_CARD.md
 ```
 
+For stratified k-fold runs, the generated model card now includes a compact
+cross-validation summary sourced from `fold_metrics.json` so operators can see
+mean ± std for F1 and ROC AUC without opening raw JSON artifacts.
+
 ## Configuration model
 
 The key design choice in this repo is that **backend selection happens in config**.
@@ -156,6 +180,8 @@ experiment_name: baseline-logreg
 tracking:
   uri: ./mlruns
   experiment_name: bc-mlops-showcase
+dataset:
+  kind: sklearn_breast_cancer
 model:
   kind: sklearn_logreg
   device: cpu
@@ -171,6 +197,8 @@ experiment_name: baseline-pytorch-mlp
 tracking:
   uri: ./mlruns
   experiment_name: bc-mlops-showcase
+dataset:
+  kind: sklearn_breast_cancer
 model:
   kind: pytorch_mlp
   device: auto
@@ -181,6 +209,77 @@ model:
     learning_rate: 0.01
     dropout: 0.1
 ```
+
+### Harder Coimbra benchmark with random forest
+
+```yaml
+experiment_name: coimbra-random-forest
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_random_forest
+  device: cpu
+  params:
+    n_estimators: 200
+    max_depth: 6
+    min_samples_leaf: 2
+```
+
+### Harder Coimbra benchmark with histogram gradient boosting
+
+```yaml
+experiment_name: coimbra-hist-gradient-boosting
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_hist_gradient_boosting
+  device: cpu
+  params:
+    learning_rate: 0.05
+    max_iter: 200
+    max_depth: 3
+    min_samples_leaf: 3
+```
+
+### Small-dataset Coimbra evaluation with stratified k-fold
+
+```yaml
+experiment_name: coimbra-hist-gradient-boosting-kfold
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+evaluation:
+  mode: stratified_k_fold
+  folds: 5
+model:
+  kind: sklearn_hist_gradient_boosting
+  device: cpu
+  params:
+    learning_rate: 0.05
+    max_iter: 200
+    max_depth: 3
+    min_samples_leaf: 3
+```
+
+This mode evaluates the model from out-of-fold predictions across the full Coimbra
+dataset, then persists one final fitted sklearn artifact for inference.
 
 ## Training outputs
 
