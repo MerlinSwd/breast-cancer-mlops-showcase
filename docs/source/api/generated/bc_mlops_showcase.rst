@@ -15,6 +15,7 @@
    data
    designer
    inference
+   model_designer
    modeling
    pipeline
    reporting

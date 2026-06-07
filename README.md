@@ -130,14 +130,15 @@ The interactive deck adds:
 - a detail pane for the selected run with metric deltas vs the champion
 - executable in-TUI operator actions for `validate`, `report`, `predict`, and `retrain`
 - a top control bar with menu-style selectors for mode, sort order, and health triage
-- clickable toolbar buttons for reload, actions, compare, help, run design, and run-level operations
+- clickable toolbar buttons for reload, actions, compare, help, run design, model design, and run-level operations
 - a run-designer lane so you can create a draft config, clone an existing config into the draft, preview normalized YAML, validate it, save it under `configs/`, and launch training without leaving the TUI
+- a model-designer lane so you can tune model-family hyperparameters interactively, preview the normalized `model:` block, and apply the resulting model settings straight into the run designer
 - a task-status pane with success/failure feedback and action output previews
 - artifact drill-down for `metrics.json`, `metadata.json`, `MODEL_CARD.md`, `config.resolved.yaml`, `fold_metrics.json`, and `feature_importance.csv`
 - a config-browser mode so you can inspect training YAMLs without leaving the TUI
 - run-to-run compare mode for metric deltas and artifact-issue differences
 - failure-first triage filters, including unhealthy runs, missing cards, missing models, missing metrics, registry drift, and cross-validation-only views
-- sort cycling with `s`, health filtering with `h`, mode switching with `tab`, opening the run designer with `n`, detail/artifact cycling with `enter`, actions with `a`, compare with `c`, help with `?`, reload with `r`, filtering with `/`, and quit with `q`
+- sort cycling with `s`, health filtering with `h`, mode switching with `tab`, opening the run designer with `n`, opening the model designer with `b`, detail/artifact cycling with `enter`, actions with `a`, compare with `c`, help with `?`, reload with `r`, filtering with `/`, and quit with `q`
 
 ### Validate against quality gates
 
