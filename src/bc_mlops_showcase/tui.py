@@ -6,17 +6,58 @@ import json
 from dataclasses import dataclass
 from io import StringIO
 from pathlib import Path
+from typing import Literal
 
 from rich.console import Console, Group
 from rich.panel import Panel
 from rich.table import Table
 from rich.text import Text
 from textual.app import App, ComposeResult
+from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
 
-SORT_KEYS = ("f1", "accuracy", "roc_auc", "run_name")
+RunMode = Literal["runs", "configs"]
+RunDetailMode = Literal["run", "artifacts", "actions", "compare", "help"]
+HealthFilter = Literal[
+    "all",
+    "unhealthy_only",
+    "card_missing",
+    "model_missing",
+    "metrics_missing",
+    "registry_drift",
+    "cv_only",
+]
+
+SORT_KEYS = (
+    "f1",
+    "accuracy",
+    "roc_auc",
+    "run_name",
+    "issue_count",
+    "timestamp",
+    "model_kind",
+    "evaluation_mode",
+    "cv_f1_std",
+)
 DEFAULT_SORT_KEY = "f1"
+HEALTH_FILTERS: tuple[HealthFilter, ...] = (
+    "all",
+    "unhealthy_only",
+    "card_missing",
+    "model_missing",
+    "metrics_missing",
+    "registry_drift",
+    "cv_only",
+)
+ARTIFACT_KEYS = (
+    "metrics",
+    "metadata",
+    "model_card",
+    "config",
+    "fold_metrics",
+    "feature_importance",
+)
 
 
 @dataclass(slots=True)
@@ -57,6 +98,33 @@ class DashboardRunView:
     metrics_status: str
     card_status: str
     issue_count: int
+    timestamp: str
+    evaluation_mode: str
+    cv_f1_std: str
+
+
+@dataclass(slots=True)
+class ConfigView:
+    """Small summary for one config file in the browser view."""
+
+    name: str
+    path: Path
+    experiment_name: str
+    model_kind: str
+    dataset_kind: str
+    target_column: str
+    evaluation_mode: str
+    tracking_experiment: str
+
+
+@dataclass(slots=True)
+class ActionResult:
+    """Outcome from an in-TUI operator action."""
+
+    ok: bool
+    title: str
+    message: str
+    output: str
 
 
 BRAND_TITLE = "MERLIN // ONCO-OPS COMMAND DECK"
@@ -103,14 +171,23 @@ class MerlinDashboardApp(App[None]):
         height: 1fr;
     }
 
-    #overview, #details-pane {
-        height: 1fr;
+    #overview, #details-pane, #task-pane {
         border: round rgb(59, 130, 246);
         padding: 0 1;
     }
 
     #overview {
+        height: 9;
         margin-bottom: 1;
+    }
+
+    #details-pane {
+        height: 1fr;
+        margin-bottom: 1;
+    }
+
+    #task-pane {
+        height: 11;
     }
 
     .section-title {
@@ -123,7 +200,7 @@ class MerlinDashboardApp(App[None]):
         height: 1fr;
     }
 
-    #run-details {
+    #run-details, #task-status {
         height: 1fr;
         padding: 0 1;
     }
@@ -136,78 +213,181 @@ class MerlinDashboardApp(App[None]):
     """
 
     BINDINGS = [
-        ("q", "quit", "Quit"),
-        ("r", "reload", "Reload"),
-        ("slash", "focus_filter", "Filter"),
-        ("s", "cycle_sort", "Sort"),
-        ("h", "toggle_health_filter", "Health"),
+        Binding("q", "quit", "Quit"),
+        Binding("r", "reload", "Reload"),
+        Binding("slash", "focus_filter", "Filter"),
+        Binding("s", "cycle_sort", "Sort"),
+        Binding("h", "toggle_health_filter", "Health"),
+        Binding("tab", "switch_mode", "Mode", priority=True),
+        Binding("enter", "open_detail", "Detail", priority=True),
+        Binding("a", "show_actions", "Actions"),
+        Binding("c", "compare_selected_run", "Compare"),
+        Binding("question_mark", "toggle_help", "Help", priority=True),
+        Binding("v", "validate_selected_run", "Validate"),
+        Binding("m", "report_selected_run", "Model card"),
+        Binding("p", "predict_selected_run", "Predict"),
+        Binding("t", "retrain_selected_run", "Retrain"),
     ]
 
-    def __init__(self, registry_path: Path, run_root: Path) -> None:
+    def __init__(
+        self,
+        registry_path: Path,
+        run_root: Path,
+        config_root: Path = Path("configs"),
+        sample_input_path: Path = Path("sample-inputs/sample.json"),
+        gates_path: Path = Path("configs/quality_gates.yaml"),
+    ) -> None:
         super().__init__()
         self.registry_path = registry_path
         self.run_root = run_root
+        self.config_root = config_root
+        self.sample_input_path = sample_input_path
+        self.gates_path = gates_path
         self.summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
+        self.config_views = load_config_views(config_root)
         self.sort_key = DEFAULT_SORT_KEY
-        self.unhealthy_only = False
+        self.health_filter: HealthFilter = "all"
+        self.mode: RunMode = "runs"
+        self.detail_mode: RunDetailMode = "run"
         self.selected_run_name = _default_selected_run_name(self.summary)
+        self.selected_config_name = self.config_views[0].name if self.config_views else None
+        self.compare_anchor_name: str | None = None
+        self.artifact_key = "metrics"
+        self.last_action_result = ActionResult(
+            ok=True,
+            title="Idle",
+            message="No action run yet.",
+            output="Press a/v/m/p/t inside a run to operate from the command deck.",
+        )
         self._is_refreshing_list = False
+        self._prior_detail_mode: RunDetailMode = "run"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static(render_merlin_logo(), id="logo")
-        yield Input(placeholder="Filter runs by name or model kind...", id="run-filter")
+        yield Input(placeholder="Filter runs or configs...", id="run-filter")
         with Horizontal(id="main-grid"):
             with Vertical(id="sidebar"):
-                yield Static("Tracked Runs", classes="section-title")
+                yield Static("Tracked Items", classes="section-title")
                 yield ListView(id="run-list")
             with Vertical(id="inspector-pane"):
                 yield Static("", id="overview")
                 with Vertical(id="details-pane"):
                     yield Static("Run Details", classes="section-title")
                     yield Static("", id="run-details")
+                with Vertical(id="task-pane"):
+                    yield Static("Task Status", classes="section-title")
+                    yield Static("", id="task-status")
         yield Static("", id="status-bar")
         yield Footer()
 
     def on_mount(self) -> None:
         self._refresh_view(query="")
         self.query_one("#run-list", ListView).focus()
-        self._refresh_status("Ready. / filter • s sort • h unhealthy-only • r reload • q quit.")
+        self._refresh_status("Ready. / filter • tab mode • enter detail • a actions • ? help.")
+        self._refresh_task_status()
 
     def action_focus_filter(self) -> None:
         self.query_one("#run-filter", Input).focus()
 
+    def action_switch_mode(self) -> None:
+        self.mode = "configs" if self.mode == "runs" else "runs"
+        self.detail_mode = "run"
+        self._refresh_view(query=self._current_query())
+        self._refresh_status("Switched workspace lane.")
+
     def action_cycle_sort(self) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Sort applies to runs mode only.")
+            return
         current_index = SORT_KEYS.index(self.sort_key)
         self.sort_key = SORT_KEYS[(current_index + 1) % len(SORT_KEYS)]
         self.selected_run_name = None
         self._refresh_view(query=self._current_query())
-        visible_runs = self._current_visible_runs()
-        if visible_runs:
-            self.selected_run_name = visible_runs[0].run_name
-            self._refresh_details()
-            self._refresh_overview()
         self._refresh_status(f"Sort set to {self.sort_key}.")
 
     def action_toggle_health_filter(self) -> None:
-        self.unhealthy_only = not self.unhealthy_only
+        if self.mode != "runs":
+            self._refresh_status("Health filters apply to runs mode only.")
+            return
+        current_index = HEALTH_FILTERS.index(self.health_filter)
+        self.health_filter = HEALTH_FILTERS[(current_index + 1) % len(HEALTH_FILTERS)]
         self.selected_run_name = None
         self._refresh_view(query=self._current_query())
-        visible_runs = self._current_visible_runs()
-        if visible_runs:
-            self.selected_run_name = visible_runs[0].run_name
-            self._refresh_details()
-            self._refresh_overview()
-        filter_state = "unhealthy only" if self.unhealthy_only else "all runs"
-        self._refresh_status(f"Health filter set to {filter_state}.")
+        self._refresh_status(f"Health filter set to {_health_filter_label(self.health_filter)}.")
 
     def action_reload(self) -> None:
         self.summary = load_dashboard_summary(
             registry_path=self.registry_path,
             run_root=self.run_root,
         )
+        self.config_views = load_config_views(self.config_root)
         self._refresh_view(query=self._current_query())
-        self._refresh_status(f"Reloaded registry from {self.registry_path}")
+        self._refresh_status("Reloaded registry and config browser.")
+
+    def action_open_detail(self) -> None:
+        if self.mode == "configs":
+            self.detail_mode = "run"
+            self._refresh_details()
+            self._refresh_status("Config detail refreshed.")
+            return
+        if self.detail_mode != "artifacts":
+            self.detail_mode = "artifacts"
+            self.artifact_key = ARTIFACT_KEYS[0]
+        else:
+            artifact_index = ARTIFACT_KEYS.index(self.artifact_key)
+            self.artifact_key = ARTIFACT_KEYS[(artifact_index + 1) % len(ARTIFACT_KEYS)]
+        self._refresh_details()
+        self._refresh_status(f"Artifact view: {self.artifact_key}.")
+
+    def action_show_actions(self) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Actions pane is only available in runs mode.")
+            return
+        self.detail_mode = "actions"
+        self._refresh_details()
+        self._refresh_status("Action catalog opened.")
+
+    def action_toggle_help(self) -> None:
+        if self.detail_mode == "help":
+            self.detail_mode = self._prior_detail_mode
+        else:
+            self._prior_detail_mode = self.detail_mode
+            self.detail_mode = "help"
+        self._refresh_details()
+        self._refresh_status("Keyboard help toggled.")
+
+    def action_compare_selected_run(self) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Compare mode only works in runs mode.")
+            return
+        if self.selected_run_name is None:
+            self._refresh_status("No run selected to compare.")
+            return
+        if self.compare_anchor_name is None:
+            self.compare_anchor_name = self.selected_run_name
+            self._refresh_status(f"Pinned compare anchor: {self.compare_anchor_name}")
+            return
+        self.detail_mode = "compare"
+        self._refresh_details()
+        if self.compare_anchor_name == self.selected_run_name:
+            self._refresh_status("Select another run to compare against the anchor.")
+        else:
+            self._refresh_status(
+                f"Comparing {self.compare_anchor_name} vs {self.selected_run_name}."
+            )
+
+    def action_validate_selected_run(self) -> None:
+        self._execute_selected_action("validate")
+
+    def action_report_selected_run(self) -> None:
+        self._execute_selected_action("report")
+
+    def action_predict_selected_run(self) -> None:
+        self._execute_selected_action("predict")
+
+    def action_retrain_selected_run(self) -> None:
+        self._execute_selected_action("retrain")
 
     def on_input_changed(self, event: Input.Changed) -> None:
         if event.input.id != "run-filter":
@@ -231,6 +411,26 @@ class MerlinDashboardApp(App[None]):
             return
         self._sync_selected_from_list()
 
+    def _execute_selected_action(self, action: str) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Operator actions only run in runs mode.")
+            return
+        self.last_action_result = execute_run_action(
+            self.summary,
+            run_root=self.run_root,
+            selected_run_name=self.selected_run_name,
+            action=action,
+            sample_input_path=self.sample_input_path,
+            gates_path=self.gates_path,
+        )
+        self._refresh_task_status()
+        self._refresh_status(self.last_action_result.message)
+        self.summary = load_dashboard_summary(
+            registry_path=self.registry_path,
+            run_root=self.run_root,
+        )
+        self._refresh_view(query=self._current_query())
+
     def _current_query(self) -> str:
         return self.query_one("#run-filter", Input).value
 
@@ -239,57 +439,104 @@ class MerlinDashboardApp(App[None]):
             self.summary,
             query=self._current_query(),
             sort_key=self.sort_key,
-            unhealthy_only=self.unhealthy_only,
+            unhealthy_only=self.health_filter == "unhealthy_only",
+            health_filter=self.health_filter,
         )
+
+    def _current_visible_configs(self) -> list[ConfigView]:
+        return select_config_views(self.config_views, query=self._current_query())
 
     def _refresh_view(self, query: str) -> None:
         self._refresh_list(query=query)
         self._refresh_details()
         self._refresh_overview()
+        self._refresh_task_status()
 
     def _refresh_list(self, query: str) -> None:
         run_list = self.query_one("#run-list", ListView)
-        run_views = select_run_views(
-            self.summary,
-            query=query,
-            sort_key=self.sort_key,
-            unhealthy_only=self.unhealthy_only,
-        )
-
         self._is_refreshing_list = True
         run_list.clear()
-        if not run_views:
-            self.selected_run_name = None
-            run_list.append(ListItem(Label("No runs match that filter."), name=""))
+
+        if self.mode == "runs":
+            run_views = select_run_views(
+                self.summary,
+                query=query,
+                sort_key=self.sort_key,
+                unhealthy_only=self.health_filter == "unhealthy_only",
+                health_filter=self.health_filter,
+            )
+            if not run_views:
+                self.selected_run_name = None
+                run_list.append(ListItem(Label("No runs match that filter."), name=""))
+                self._is_refreshing_list = False
+                return
+
+            selected_name = self.selected_run_name
+            visible_run_names = {run.run_name for run in run_views}
+            if selected_name not in visible_run_names:
+                selected_name = run_views[0].run_name
+
+            selected_index = 0
+            for index, run_view in enumerate(run_views):
+                issue_marker = f" · issues={run_view.issue_count}" if run_view.issue_count else ""
+                label = (
+                    f"{run_view.run_name} [{run_view.model_kind}] "
+                    f"F1={run_view.f1}{issue_marker}"
+                )
+                run_list.append(ListItem(Label(label), name=run_view.run_name))
+                if run_view.run_name == selected_name:
+                    selected_index = index
+
+            run_list.index = selected_index
+            self.selected_run_name = run_views[selected_index].run_name
             self._is_refreshing_list = False
             return
 
-        selected_name = self.selected_run_name
-        visible_run_names = {run.run_name for run in run_views}
-        if selected_name not in visible_run_names:
-            selected_name = run_views[0].run_name
+        config_views = select_config_views(self.config_views, query=query)
+        if not config_views:
+            self.selected_config_name = None
+            run_list.append(ListItem(Label("No configs match that filter."), name=""))
+            self._is_refreshing_list = False
+            return
+
+        selected_name = self.selected_config_name
+        visible_config_names = {config.name for config in config_views}
+        if selected_name not in visible_config_names:
+            selected_name = config_views[0].name
 
         selected_index = 0
-        for index, run_view in enumerate(run_views):
-            issue_marker = f" · issues={run_view.issue_count}" if run_view.issue_count else ""
-            label = f"{run_view.run_name} [{run_view.model_kind}] F1={run_view.f1}{issue_marker}"
-            run_list.append(ListItem(Label(label), name=run_view.run_name))
-            if run_view.run_name == selected_name:
+        for index, config_view in enumerate(config_views):
+            label = (
+                f"{config_view.name} [{config_view.model_kind}] "
+                f"dataset={config_view.dataset_kind}"
+            )
+            run_list.append(ListItem(Label(label), name=config_view.name))
+            if config_view.name == selected_name:
                 selected_index = index
 
         run_list.index = selected_index
-        self.selected_run_name = run_views[selected_index].run_name
+        self.selected_config_name = config_views[selected_index].name
         self._is_refreshing_list = False
 
     def _refresh_overview(self) -> None:
         overview = self.query_one("#overview", Static)
+        if self.mode == "runs":
+            overview.update(
+                build_overview_text(
+                    self.summary,
+                    self._current_visible_runs(),
+                    sort_key=self.sort_key,
+                    unhealthy_only=self.health_filter == "unhealthy_only",
+                    query=self._current_query(),
+                    health_filter=self.health_filter,
+                )
+            )
+            return
         overview.update(
-            build_overview_text(
-                self.summary,
-                self._current_visible_runs(),
-                sort_key=self.sort_key,
-                unhealthy_only=self.unhealthy_only,
-                query=self._current_query(),
+            build_config_overview_text(
+                self.config_views,
+                self._current_visible_configs(),
+                self._current_query(),
             )
         )
 
@@ -302,19 +549,73 @@ class MerlinDashboardApp(App[None]):
         item = run_list.children[run_list.index]
         if not getattr(item, "name", None):
             return
-        self.selected_run_name = item.name
+        if self.mode == "runs":
+            self.selected_run_name = item.name
+            if self.detail_mode == "compare" and self.compare_anchor_name == self.selected_run_name:
+                self.detail_mode = "run"
+        else:
+            self.selected_config_name = item.name
         self._refresh_details()
         self._refresh_overview()
 
     def _refresh_details(self) -> None:
         details = self.query_one("#run-details", Static)
-        if not self._current_visible_runs():
+        if self.detail_mode == "help":
+            details.update(build_help_text())
+            return
+
+        if self.mode == "configs":
+            details.update(build_selected_config_text(self.config_views, self.selected_config_name))
+            return
+
+        visible_runs = self._current_visible_runs()
+        if not visible_runs:
             details.update("No runs match that filter. Clear it or reload with r.")
             return
+
+        if self.detail_mode == "artifacts":
+            details.update(
+                build_artifact_detail_text(
+                    self.summary,
+                    run_root=self.run_root,
+                    selected_run_name=self.selected_run_name,
+                    artifact_key=self.artifact_key,
+                )
+            )
+            return
+
+        if self.detail_mode == "actions":
+            details.update(build_action_catalog_text(self.selected_run_name))
+            return
+
+        if self.detail_mode == "compare":
+            details.update(
+                build_compare_text(
+                    self.summary,
+                    self.compare_anchor_name,
+                    self.selected_run_name,
+                )
+            )
+            return
+
         details.update(build_run_detail_text(self.summary, self.selected_run_name))
 
+    def _refresh_task_status(self) -> None:
+        task_status = self.query_one("#task-status", Static)
+        icon = "✅" if self.last_action_result.ok else "⚠️"
+        task_status.update(
+            "\n".join(
+                [
+                    f"{icon} {self.last_action_result.title}",
+                    self.last_action_result.message,
+                    "",
+                    self.last_action_result.output,
+                ]
+            )
+        )
+
     def _refresh_status(self, message: str) -> None:
-        self.query_one("#status-bar", Static).update(message)
+        self.query_one("#status-bar", Static).update(f"Mode: {self.mode} • {message}")
 
 
 def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSummary:
@@ -407,6 +708,54 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
     )
 
 
+def load_config_views(config_root: Path) -> list[ConfigView]:
+    """Load browsable config summaries from a config directory."""
+
+    from .config import load_training_config
+
+    if not config_root.exists():
+        return []
+
+    views: list[ConfigView] = []
+    for path in sorted(config_root.glob("*.yaml")):
+        try:
+            config = load_training_config(path)
+        except Exception:
+            continue
+        evaluation_mode = config.evaluation.mode
+        if evaluation_mode == "stratified_k_fold":
+            evaluation_mode = f"{evaluation_mode} ({config.evaluation.folds} folds)"
+        views.append(
+            ConfigView(
+                name=path.stem,
+                path=path,
+                experiment_name=config.experiment_name,
+                model_kind=config.model.kind,
+                dataset_kind=config.dataset.kind,
+                target_column=config.dataset.target_column,
+                evaluation_mode=evaluation_mode,
+                tracking_experiment=config.tracking.experiment_name,
+            )
+        )
+    return views
+
+
+def select_config_views(config_views: list[ConfigView], query: str) -> list[ConfigView]:
+    """Filter config views for the config browser mode."""
+
+    needle = query.strip().lower()
+    if not needle:
+        return list(config_views)
+    return [
+        config_view
+        for config_view in config_views
+        if needle in config_view.name.lower()
+        or needle in config_view.model_kind.lower()
+        or needle in config_view.dataset_kind.lower()
+        or needle in config_view.experiment_name.lower()
+    ]
+
+
 def render_merlin_logo() -> str:
     """Return the reusable Merlin-themed text logo for terminal views."""
 
@@ -471,6 +820,9 @@ def build_run_views(summary: DashboardSummary) -> list[DashboardRunView]:
                 metrics_status=status.metrics_status,
                 card_status=status.card_status,
                 issue_count=issue_count,
+                timestamp=str(run.get("timestamp", "n/a")),
+                evaluation_mode=_format_evaluation_strategy(run),
+                cv_f1_std=_format_summary_metric(run, "cv_f1_std"),
             )
         )
     return views
@@ -482,6 +834,7 @@ def select_run_views(
     query: str,
     sort_key: str,
     unhealthy_only: bool,
+    health_filter: HealthFilter | None = None,
 ) -> list[DashboardRunView]:
     """Filter and sort run views for static and interactive presentations."""
 
@@ -493,8 +846,11 @@ def select_run_views(
             for run_view in run_views
             if needle in run_view.run_name.lower() or needle in run_view.model_kind.lower()
         ]
-    if unhealthy_only:
-        run_views = [run_view for run_view in run_views if run_view.issue_count > 0]
+
+    effective_filter: HealthFilter = health_filter or (
+        "unhealthy_only" if unhealthy_only else "all"
+    )
+    run_views = _apply_health_filter(summary, run_views, effective_filter)
 
     return sorted(
         run_views,
@@ -510,12 +866,13 @@ def build_overview_text(
     sort_key: str,
     unhealthy_only: bool,
     query: str,
+    health_filter: HealthFilter | None = None,
 ) -> str:
     """Build summary text for the interactive inspector pane."""
 
     champion_name = str(summary.best_run["run_name"]) if summary.best_run is not None else "n/a"
     unhealthy_count = sum(status_has_issues(status) for status in summary.artifact_statuses)
-    filter_state = "unhealthy only" if unhealthy_only else "all runs"
+    effective_filter = health_filter or ("unhealthy_only" if unhealthy_only else "all")
     search_text = query.strip() or "—"
     lines = [
         "Deck Overview",
@@ -526,7 +883,7 @@ def build_overview_text(
         f"Orphan run dirs: {len(summary.orphan_run_dirs)}",
         f"Registry entries without run dirs: {len(summary.missing_run_dirs)}",
         f"Sort: {sort_key}",
-        f"Health filter: {filter_state}",
+        f"Health filter: {_health_filter_label(effective_filter)}",
         f"Search: {search_text}",
     ]
     if summary.orphan_run_dirs:
@@ -534,6 +891,24 @@ def build_overview_text(
     if summary.missing_run_dirs:
         lines.append(f"Missing dirs: {', '.join(summary.missing_run_dirs)}")
     return "\n".join(lines)
+
+
+def build_config_overview_text(
+    config_views: list[ConfigView], visible_configs: list[ConfigView], query: str
+) -> str:
+    """Build summary text for config-browser mode."""
+
+    search_text = query.strip() or "—"
+    return "\n".join(
+        [
+            "Config Browser",
+            f"Tracked configs: {len(config_views)}",
+            f"Visible configs: {len(visible_configs)}",
+            f"Search: {search_text}",
+            "Use tab to switch back to runs.",
+            "Use t from a run to retrain from config.resolved.yaml.",
+        ]
+    )
 
 
 def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | None) -> str:
@@ -611,10 +986,263 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
     )
 
 
-def launch_dashboard_app(registry_path: Path, run_root: Path) -> int:
+def build_config_detail_text(config_view: ConfigView) -> str:
+    """Build a detailed description for a selected config."""
+
+    return "\n".join(
+        [
+            f"Config: {config_view.name}",
+            f"Path: {config_view.path}",
+            f"Experiment: {config_view.experiment_name}",
+            f"Model kind: {config_view.model_kind}",
+            f"Dataset: {config_view.dataset_kind}",
+            f"Target column: {config_view.target_column}",
+            f"Evaluation: {config_view.evaluation_mode}",
+            f"Tracking experiment: {config_view.tracking_experiment}",
+            "",
+            "Operator move:",
+            f"- uv run bc-mlops train --config {config_view.path} --output-dir artifacts/runs",
+        ]
+    )
+
+
+def build_selected_config_text(
+    config_views: list[ConfigView], selected_config_name: str | None
+) -> str:
+    """Render selected config detail or an empty-state message."""
+
+    if not config_views:
+        return "No configs found. Add YAML files under configs/ to populate the browser."
+    if selected_config_name is None:
+        return "No config selected. Use the list to choose a config."
+    config_by_name = {config_view.name: config_view for config_view in config_views}
+    config_view = config_by_name.get(selected_config_name)
+    if config_view is None:
+        return "Selected config is no longer available. Reload with r."
+    return build_config_detail_text(config_view)
+
+
+def build_artifact_detail_text(
+    summary: DashboardSummary,
+    *,
+    run_root: Path,
+    selected_run_name: str | None,
+    artifact_key: str,
+) -> str:
+    """Return raw run-file content for the artifact inspector view."""
+
+    if selected_run_name is None:
+        return "No run selected. Choose a run before opening artifact drill-down."
+    artifact_path = _artifact_path_for_key(summary, run_root, selected_run_name, artifact_key)
+    if artifact_path is None:
+        return f"Artifact '{artifact_key}' is not available for this run."
+    if not artifact_path.exists():
+        return f"Artifact missing: {artifact_path.name}"
+    try:
+        content = artifact_path.read_text()
+    except OSError as exc:
+        return f"Could not read artifact {artifact_path.name}: {exc}"
+    preview = content.strip() or "(empty file)"
+    return "\n".join(
+        [
+            f"Artifact view: {artifact_key}",
+            f"Path: {artifact_path}",
+            "",
+            preview,
+        ]
+    )
+
+
+def build_compare_text(
+    summary: DashboardSummary,
+    left_run_name: str | None,
+    right_run_name: str | None,
+) -> str:
+    """Build a run-vs-run comparison summary."""
+
+    if left_run_name is None:
+        return "Compare Runs\nPick a run and press c to set the compare anchor."
+    if right_run_name is None or right_run_name == left_run_name:
+        return (
+            "Compare Runs\n"
+            f"Anchor: {left_run_name}\n"
+            "Select another run and press c again to compare."
+        )
+
+    run_by_name = {str(run["run_name"]): run for run in summary.runs}
+    left = run_by_name.get(left_run_name)
+    right = run_by_name.get(right_run_name)
+    if left is None or right is None:
+        return "Compare Runs\nOne of the selected runs is no longer present. Reload with r."
+
+    left_status = _artifact_status_by_run(summary).get(left_run_name)
+    right_status = _artifact_status_by_run(summary).get(right_run_name)
+    left_issues = _artifact_issue_count(left_status) if left_status else 0
+    right_issues = _artifact_issue_count(right_status) if right_status else 0
+    return "\n".join(
+        [
+            "Compare Runs",
+            f"Left: {left_run_name}",
+            f"Right: {right_run_name}",
+            "",
+            f"ΔF1: {_metric_delta_text(right, left, 'f1')}",
+            f"ΔROC AUC: {_metric_delta_text(right, left, 'roc_auc')}",
+            f"ΔAccuracy: {_metric_delta_text(right, left, 'accuracy')}",
+            f"Issue delta: {right_issues - left_issues:+d}",
+            f"Left evaluation: {_format_evaluation_strategy(left)}",
+            f"Right evaluation: {_format_evaluation_strategy(right)}",
+            f"Left CV F1 σ: {_format_summary_metric(left, 'cv_f1_std')}",
+            f"Right CV F1 σ: {_format_summary_metric(right, 'cv_f1_std')}",
+        ]
+    )
+
+
+def build_action_catalog_text(selected_run_name: str | None) -> str:
+    """Render the in-TUI action palette/help panel."""
+
+    run_name = selected_run_name or "<selected-run>"
+    return "\n".join(
+        [
+            "Action Catalog",
+            f"Selected run: {run_name}",
+            "",
+            "Hotkeys:",
+            "- v → validate selected run against configs/quality_gates.yaml",
+            "- m → generate MODEL_CARD.md for the selected run",
+            "- p → predict from sample-inputs/sample.json using the selected model",
+            "- t → retrain from config.resolved.yaml for the selected run",
+            "- enter → open/cycle artifact drill-down",
+            "- c → pin compare anchor / compare current run",
+        ]
+    )
+
+
+def build_help_text() -> str:
+    """Render keyboard help for the interactive command deck."""
+
+    return "\n".join(
+        [
+            "Keyboard Help",
+            "- / focus filter",
+            "- s cycle sort",
+            "- h cycle triage filter",
+            "- tab switch runs/configs workspace lanes",
+            "- enter open artifact drill-down / cycle artifact file",
+            "- a open action catalog",
+            "- c compare selected run",
+            "- v validate selected run",
+            "- m generate model card",
+            "- p run prediction",
+            "- t retrain from resolved config",
+            "- r reload registry and configs",
+            "- q quit",
+        ]
+    )
+
+
+def execute_run_action(
+    summary: DashboardSummary,
+    *,
+    run_root: Path,
+    selected_run_name: str | None,
+    action: str,
+    sample_input_path: Path = Path("sample-inputs/sample.json"),
+    gates_path: Path = Path("configs/quality_gates.yaml"),
+) -> ActionResult:
+    """Run one operator workflow for the selected run."""
+
+    if selected_run_name is None:
+        return ActionResult(False, "No selection", "Pick a run before launching actions.", "")
+
+    run_dir = run_root / selected_run_name
+    if not run_dir.exists():
+        return ActionResult(False, "Run missing", f"Run directory not found: {run_dir}", "")
+
+    try:
+        if action == "validate":
+            from .validation import validate_metrics
+
+            metrics_path = run_dir / "metrics.json"
+            result = validate_metrics(metrics_path, gates_path)
+            passed = bool(result.get("passed"))
+            return ActionResult(
+                passed,
+                "Validation",
+                f"Validation {'passed' if passed else 'failed'} for {selected_run_name}.",
+                json.dumps(result, indent=2),
+            )
+
+        if action == "report":
+            from .reporting import build_model_card
+
+            output_path = run_dir / "MODEL_CARD.md"
+            destination = build_model_card(run_dir, output_path)
+            return ActionResult(
+                True,
+                "Model card",
+                f"Generated model card for {selected_run_name}.",
+                str(destination),
+            )
+
+        if action == "predict":
+            from .inference import predict_records
+
+            model_path = _artifact_path_for_key(summary, run_root, selected_run_name, "model")
+            if model_path is None:
+                return ActionResult(
+                    False,
+                    "Prediction",
+                    f"Could not locate model artifact for {selected_run_name}.",
+                    "",
+                )
+            prediction = predict_records(model_path=model_path, input_path=sample_input_path)
+            return ActionResult(
+                True,
+                "Prediction",
+                f"Scored sample input with {selected_run_name}.",
+                json.dumps(prediction, indent=2),
+            )
+
+        if action == "retrain":
+            from .config import load_training_config
+            from .pipeline import train_and_evaluate
+
+            config_path = run_dir / "config.resolved.yaml"
+            config = load_training_config(config_path)
+            result = train_and_evaluate(config=config, output_root=run_root)
+            return ActionResult(
+                True,
+                "Retrain",
+                f"Retraining launched from {config_path.name}.",
+                json.dumps(result.summary(), indent=2),
+            )
+
+        return ActionResult(False, "Unknown action", f"Unsupported action: {action}", "")
+    except Exception as exc:  # pragma: no cover - exercised by interactive flows
+        return ActionResult(
+            False,
+            action.title(),
+            f"{action} failed for {selected_run_name}.",
+            str(exc),
+        )
+
+
+def launch_dashboard_app(
+    registry_path: Path,
+    run_root: Path,
+    config_root: Path = Path("configs"),
+    sample_input_path: Path = Path("sample-inputs/sample.json"),
+    gates_path: Path = Path("configs/quality_gates.yaml"),
+) -> int:
     """Launch the interactive Textual app."""
 
-    app = MerlinDashboardApp(registry_path=registry_path, run_root=run_root)
+    app = MerlinDashboardApp(
+        registry_path=registry_path,
+        run_root=run_root,
+        config_root=config_root,
+        sample_input_path=sample_input_path,
+        gates_path=gates_path,
+    )
     app.run()
     return 0
 
@@ -637,7 +1265,9 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
     runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
     dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
     evaluation = (
-        payload.get("evaluation", {}) if isinstance(payload.get("evaluation", {}), dict) else {}
+        payload.get("evaluation", {})
+        if isinstance(payload.get("evaluation", {}), dict)
+        else {}
     )
     mlflow = payload.get("mlflow", {}) if isinstance(payload.get("mlflow", {}), dict) else {}
     return {
@@ -701,8 +1331,8 @@ def _metric_value(run: dict[str, object], key: str, default: float = -1.0) -> fl
 
 
 def _sort_value(run_view: DashboardRunView, sort_key: str) -> float | str:
-    if sort_key == "run_name":
-        return run_view.run_name
+    if sort_key in {"run_name", "timestamp", "model_kind", "evaluation_mode"}:
+        return getattr(run_view, sort_key)
     value = getattr(run_view, sort_key)
     try:
         return float(value)
@@ -748,6 +1378,13 @@ def _format_delta_vs_champion(
     return f"{delta:+.4f}"
 
 
+def _metric_delta_text(
+    current_run: dict[str, object], baseline_run: dict[str, object], key: str
+) -> str:
+    delta = _metric_value(current_run, key) - _metric_value(baseline_run, key)
+    return f"{delta:+.4f}"
+
+
 def _format_metric(run: dict[str, object], key: str) -> str:
     value = run.get(key)
     try:
@@ -776,6 +1413,67 @@ def _format_cv_summary_line(run: dict[str, object], *, metric_key: str, label: s
 
 def _ok_or_missing(path: Path, label: str) -> str:
     return f"OK: {label}" if path.exists() else f"{label} missing"
+
+
+def _health_filter_label(health_filter: HealthFilter) -> str:
+    return {
+        "all": "all runs",
+        "unhealthy_only": "unhealthy only",
+        "card_missing": "missing model cards",
+        "model_missing": "missing model artifacts",
+        "metrics_missing": "missing metrics",
+        "registry_drift": "registry drift",
+        "cv_only": "cross-validation only",
+    }[health_filter]
+
+
+def _apply_health_filter(
+    summary: DashboardSummary, run_views: list[DashboardRunView], health_filter: HealthFilter
+) -> list[DashboardRunView]:
+    if health_filter == "all":
+        return run_views
+    if health_filter == "unhealthy_only":
+        return [run_view for run_view in run_views if run_view.issue_count > 0]
+    if health_filter == "card_missing":
+        return [run_view for run_view in run_views if "missing" in run_view.card_status]
+    if health_filter == "model_missing":
+        return [run_view for run_view in run_views if "missing" in run_view.model_status]
+    if health_filter == "metrics_missing":
+        return [run_view for run_view in run_views if "missing" in run_view.metrics_status]
+    if health_filter == "registry_drift":
+        drift_names = set(summary.orphan_run_dirs) | set(summary.missing_run_dirs)
+        return [run_view for run_view in run_views if run_view.run_name in drift_names]
+    if health_filter == "cv_only":
+        return [
+            run_view
+            for run_view in run_views
+            if run_view.evaluation_mode.startswith("stratified_k_fold")
+        ]
+    return run_views
+
+
+def _artifact_path_for_key(
+    summary: DashboardSummary, run_root: Path, run_name: str, artifact_key: str
+) -> Path | None:
+    run_dir = run_root / run_name
+    if artifact_key == "metrics":
+        return run_dir / "metrics.json"
+    if artifact_key == "metadata":
+        return run_dir / "metadata.json"
+    if artifact_key == "model_card":
+        return run_dir / "MODEL_CARD.md"
+    if artifact_key == "config":
+        return run_dir / "config.resolved.yaml"
+    if artifact_key == "fold_metrics":
+        return run_dir / "fold_metrics.json"
+    if artifact_key == "feature_importance":
+        return run_dir / "feature_importance.csv"
+    if artifact_key == "model":
+        run_by_name = {str(run["run_name"]): run for run in summary.runs}
+        run = run_by_name.get(run_name, {})
+        artifact_name = str(run.get("model_artifact", "model artifact"))
+        return run_dir / artifact_name
+    return None
 
 
 def render_dashboard_text(
@@ -854,6 +1552,7 @@ def _leaderboard_panel(summary: DashboardSummary) -> Panel:
         query="",
         sort_key=DEFAULT_SORT_KEY,
         unhealthy_only=False,
+        health_filter="all",
     ):
         table.add_row(
             run_view.run_name,
@@ -884,6 +1583,7 @@ def _comparison_panel(summary: DashboardSummary) -> Panel:
         query="",
         sort_key=DEFAULT_SORT_KEY,
         unhealthy_only=False,
+        health_filter="all",
     )
     run_by_name = {str(run["run_name"]): run for run in summary.runs}
 

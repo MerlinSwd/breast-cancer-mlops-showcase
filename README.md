@@ -128,9 +128,13 @@ The interactive deck adds:
 - a richer run dossier with timestamp, train/test rows, runtime, dataset, MLflow IDs, and artifact paths
 - cross-validation stability summaries in the selected run dossier when `fold_metrics.json` is present
 - a detail pane for the selected run with metric deltas vs the champion
-- ready-to-run operator actions in the selected run dossier for `validate` and `report`
-- unhealthy-only mode to isolate runs missing artifacts or model cards
-- sort cycling with `s`, health filtering with `h`, reload with `r`, filtering with `/`, and quit with `q`
+- executable in-TUI operator actions for `validate`, `report`, `predict`, and `retrain`
+- a task-status pane with success/failure feedback and action output previews
+- artifact drill-down for `metrics.json`, `metadata.json`, `MODEL_CARD.md`, `config.resolved.yaml`, `fold_metrics.json`, and `feature_importance.csv`
+- a config-browser mode so you can inspect training YAMLs without leaving the TUI
+- run-to-run compare mode for metric deltas and artifact-issue differences
+- failure-first triage filters, including unhealthy runs, missing cards, missing models, missing metrics, registry drift, and cross-validation-only views
+- sort cycling with `s`, health filtering with `h`, mode switching with `tab`, detail/artifact cycling with `enter`, actions with `a`, compare with `c`, help with `?`, reload with `r`, filtering with `/`, and quit with `q`
 
 ### Validate against quality gates
 

@@ -89,9 +89,22 @@ entries, and points the operator at the next command worth running.
 The interactive deck adds live filtering by run name or model kind, keyboard
 navigation through the run list, an overview pane for deck health and sort
 state, a richer run dossier with timestamp, train/test rows, runtime, dataset,
-MLflow identifiers, and artifact-path health, a detail pane with metric deltas
-versus the champion, an unhealthy-only filter with ``h``, sort cycling with
-``s``, filter focus with ``/``, reload support with ``r``, and quit with ``q``.
+MLflow identifiers, and artifact-path health, cross-validation stability
+summaries, and a detail pane with metric deltas versus the champion.
+
+It also exposes executable in-TUI operator actions for ``validate``,
+``report``, ``predict``, and ``retrain``; a task-status pane with
+success/failure feedback and action output previews; artifact drill-down for
+``metrics.json``, ``metadata.json``, ``MODEL_CARD.md``,
+``config.resolved.yaml``, ``fold_metrics.json``, and
+``feature_importance.csv``; a config-browser mode; a run-to-run compare mode;
+and richer triage filters for unhealthy runs, missing cards, missing models,
+missing metrics, registry drift, and cross-validation-only views.
+
+Use ``s`` to cycle sort order, ``h`` to cycle triage filters, ``tab`` to switch
+between runs and configs, ``enter`` to cycle details and artifacts, ``a`` to
+open the action catalog, ``c`` to pin a compare anchor, ``?`` for help, ``/``
+to focus the filter, ``r`` to reload, and ``q`` to quit.
 
 Validate a trained run
 ----------------------
