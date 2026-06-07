@@ -16,6 +16,7 @@
    .. autosummary::
    
       DatasetConfig
+      EvaluationConfig
       ModelConfig
       SplitConfig
       TrackingConfig

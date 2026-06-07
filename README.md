@@ -65,6 +65,7 @@ uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
 ```
 
 ### 5. Inspect results
@@ -235,6 +236,34 @@ model:
     max_depth: 3
     min_samples_leaf: 3
 ```
+
+### Small-dataset Coimbra evaluation with stratified k-fold
+
+```yaml
+experiment_name: coimbra-hist-gradient-boosting-kfold
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+evaluation:
+  mode: stratified_k_fold
+  folds: 5
+model:
+  kind: sklearn_hist_gradient_boosting
+  device: cpu
+  params:
+    learning_rate: 0.05
+    max_iter: 200
+    max_depth: 3
+    min_samples_leaf: 3
+```
+
+This mode evaluates the model from out-of-fold predictions across the full Coimbra
+dataset, then persists one final fitted sklearn artifact for inference.
 
 ## Training outputs
 

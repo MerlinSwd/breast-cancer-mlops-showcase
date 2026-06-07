@@ -50,6 +50,14 @@ class SplitConfig:
 
 
 @dataclass(slots=True)
+class EvaluationConfig:
+    """Evaluation strategy configuration."""
+
+    mode: str = "holdout"
+    folds: int = 5
+
+
+@dataclass(slots=True)
 class TrackingConfig:
     """MLflow tracking configuration."""
 
@@ -87,6 +95,7 @@ class TrainingConfig:
     random_seed: int = 42
     threshold: float = 0.5
     split: SplitConfig = field(default_factory=SplitConfig)
+    evaluation: EvaluationConfig = field(default_factory=EvaluationConfig)
     tracking: TrackingConfig = field(default_factory=TrackingConfig)
     dataset: DatasetConfig = field(default_factory=DatasetConfig)
     model: ModelConfig = field(default_factory=ModelConfig)
@@ -126,6 +135,19 @@ def _resolve_model_config(values: dict[str, Any] | None) -> ModelConfig:
     )
 
 
+def _resolve_evaluation_config(values: dict[str, Any] | None) -> EvaluationConfig:
+    raw = values or {}
+    mode = raw.get("mode", "holdout")
+    if mode not in {"holdout", "stratified_k_fold"}:
+        raise ValueError(f"unsupported evaluation mode: {mode}")
+
+    folds = int(raw.get("folds", 5))
+    if folds < 2:
+        raise ValueError("evaluation.folds must be at least 2")
+
+    return EvaluationConfig(mode=mode, folds=folds)
+
+
 def load_training_config(path: str | Path) -> TrainingConfig:
     """Load a YAML training configuration from disk."""
 
@@ -135,6 +157,7 @@ def load_training_config(path: str | Path) -> TrainingConfig:
     default = TrainingConfig()
     dataset = _resolve_dataset_config(raw.get("dataset"))
     model = _resolve_model_config(raw.get("model"))
+    evaluation = _resolve_evaluation_config(raw.get("evaluation"))
     experiment_name = raw.get("experiment_name") or (
         "baseline-logreg"
         if model.kind == "sklearn_logreg"
@@ -149,6 +172,7 @@ def load_training_config(path: str | Path) -> TrainingConfig:
         random_seed=raw.get("random_seed", default.random_seed),
         threshold=raw.get("threshold", default.threshold),
         split=_merge_dataclass(default.split, raw.get("split")),
+        evaluation=evaluation,
         tracking=_merge_dataclass(default.tracking, raw.get("tracking")),
         dataset=dataset,
         model=model,
@@ -165,6 +189,10 @@ def config_to_dict(config: TrainingConfig) -> dict[str, Any]:
         "split": {
             "test_size": config.split.test_size,
             "stratify": config.split.stratify,
+        },
+        "evaluation": {
+            "mode": config.evaluation.mode,
+            "folds": config.evaluation.folds,
         },
         "tracking": {
             "uri": config.tracking.uri,

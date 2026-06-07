@@ -106,3 +106,31 @@ model:
     assert config.model.params["max_iter"] == 120
     assert config.model.params["max_depth"] == 3
     assert config.model.params["min_samples_leaf"] == 3
+
+
+def test_load_training_config_supports_stratified_k_fold_evaluation(tmp_path: Path) -> None:
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        f"""
+experiment_name: coimbra-kfold
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
+dataset:
+  kind: csv_tabular_binary
+  path: {COIMBRA_DATASET}
+  target_column: Classification
+  positive_label: 2.0
+evaluation:
+  mode: stratified_k_fold
+  folds: 5
+model:
+  kind: sklearn_hist_gradient_boosting
+""".strip()
+    )
+
+    config = load_training_config(config_path)
+
+    assert config.evaluation.mode == "stratified_k_fold"
+    assert config.evaluation.folds == 5
+    assert config.model.kind == "sklearn_hist_gradient_boosting"

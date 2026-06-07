@@ -10,7 +10,7 @@ from pathlib import Path
 import pandas as pd
 import yaml
 from sklearn.metrics import accuracy_score, f1_score, precision_score, recall_score, roc_auc_score
-from sklearn.model_selection import train_test_split
+from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_test_split
 
 from .config import TrainingConfig, config_to_dict
 from .data import load_dataset
@@ -46,6 +46,56 @@ def _positive_predictions(probabilities: pd.Series, threshold: float) -> pd.Seri
     return (probabilities >= threshold).astype(int)
 
 
+def _evaluate_holdout(
+    config: TrainingConfig,
+    *,
+    features: pd.DataFrame,
+    target: pd.Series,
+) -> tuple[object, pd.Series, pd.Series, int, int]:
+    X_train, X_test, y_train, y_test = train_test_split(
+        features,
+        target,
+        test_size=config.split.test_size,
+        random_state=config.random_seed,
+        stratify=target if config.split.stratify else None,
+    )
+    backend = train_backend(config=config, X_train=X_train, y_train=y_train)
+    probabilities = pd.Series(backend.predict_probabilities(X_test))
+    return backend, probabilities, y_test.reset_index(drop=True), len(X_train), len(X_test)
+
+
+def _evaluate_stratified_k_fold(
+    config: TrainingConfig,
+    *,
+    features: pd.DataFrame,
+    target: pd.Series,
+) -> tuple[object, pd.Series, pd.Series, int, int]:
+    splitter = StratifiedKFold(
+        n_splits=config.evaluation.folds,
+        shuffle=True,
+        random_state=config.random_seed,
+    )
+    trained = train_backend(config=config, X_train=features, y_train=target)
+    if not config.model.kind.startswith("sklearn_"):
+        raise ValueError("stratified_k_fold evaluation currently supports sklearn backends only")
+
+    probabilities = cross_val_predict(
+        trained._predictor,
+        features,
+        target,
+        cv=splitter,
+        method="predict_proba",
+    )[:, 1]
+    backend = trained
+    return (
+        backend,
+        pd.Series(probabilities),
+        target.reset_index(drop=True),
+        len(features),
+        len(features),
+    )
+
+
 def _write_registry(
     output_root: Path,
     run_name: str,
@@ -78,13 +128,6 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
     """Train the configured backend, evaluate it, and persist run artifacts."""
 
     dataset = load_dataset(config.dataset)
-    X_train, X_test, y_train, y_test = train_test_split(
-        dataset.features,
-        dataset.target,
-        test_size=config.split.test_size,
-        random_state=config.random_seed,
-        stratify=dataset.target if config.split.stratify else None,
-    )
 
     run_name = f"{config.experiment_name}-{_timestamp()}"
     run_dir = output_root / run_name
@@ -98,8 +141,18 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
 
     tracking = start_training_run(config)
     try:
-        backend = train_backend(config=config, X_train=X_train, y_train=y_train)
-        probabilities = pd.Series(backend.predict_probabilities(X_test))
+        if config.evaluation.mode == "stratified_k_fold":
+            backend, probabilities, y_test, train_rows, test_rows = _evaluate_stratified_k_fold(
+                config,
+                features=dataset.features,
+                target=dataset.target,
+            )
+        else:
+            backend, probabilities, y_test, train_rows, test_rows = _evaluate_holdout(
+                config,
+                features=dataset.features,
+                target=dataset.target,
+            )
         predictions = _positive_predictions(probabilities, config.threshold)
 
         metrics = {
@@ -120,11 +173,15 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
         metadata = {
             "experiment_name": config.experiment_name,
             "timestamp": _timestamp(),
-            "train_rows": len(X_train),
-            "test_rows": len(X_test),
+            "train_rows": train_rows,
+            "test_rows": test_rows,
             "target_name": dataset.target_name,
             "dataset_name": dataset.dataset_name,
             "config": config_to_dict(config),
+            "evaluation": {
+                "mode": config.evaluation.mode,
+                "folds": config.evaluation.folds,
+            },
             "dataset": {
                 "kind": config.dataset.kind,
                 "path": config.dataset.path,

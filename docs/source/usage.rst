@@ -47,6 +47,13 @@ Train the harder Coimbra benchmark with histogram gradient boosting
 
    uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
 
+Train the harder Coimbra benchmark with stratified k-fold evaluation
+--------------------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
+
 Compare runs
 ------------
 
@@ -130,3 +137,7 @@ Each training run creates a timestamped directory containing:
 
 MLflow runs are also logged under the configured tracking backend, which defaults
 to a local SQLite database plus filesystem artifact store.
+
+For small datasets such as Coimbra, set ``evaluation.mode: stratified_k_fold`` in
+the training config to score the run from out-of-fold predictions while still
+writing one final fitted sklearn artifact for downstream inference.

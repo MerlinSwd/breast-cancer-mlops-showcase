@@ -1,0 +1,25 @@
+experiment_name: coimbra-hist-gradient-boosting-kfold
+random_seed: 42
+threshold: 0.5
+split:
+  test_size: 0.2
+  stratify: true
+evaluation:
+  mode: stratified_k_fold
+  folds: 5
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_hist_gradient_boosting
+  device: cpu
+  params:
+    learning_rate: 0.05
+    max_iter: 200
+    max_depth: 3
+    min_samples_leaf: 3

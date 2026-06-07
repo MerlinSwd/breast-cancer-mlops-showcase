@@ -29,6 +29,13 @@ Train the Coimbra histogram-gradient-boosting benchmark
 
    uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
 
+Train the Coimbra histogram-gradient-boosting benchmark with stratified k-fold
+------------------------------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
+
 Compare all recorded runs
 -------------------------
 
@@ -49,7 +56,7 @@ What to inspect after training
 
 Review these files in the run directory:
 
-- ``metadata.json`` for backend/runtime/MLflow metadata
+- ``metadata.json`` for backend/runtime/MLflow metadata and whether the run used holdout or stratified k-fold evaluation
 - ``metrics.json`` for evaluation output
-- ``config.resolved.yaml`` for the fully resolved training config
+- ``config.resolved.yaml`` for the fully resolved training config, including ``evaluation.mode``
 - ``feature_importance.csv`` when the backend emits feature importance
