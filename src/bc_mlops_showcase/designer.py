@@ -6,7 +6,6 @@ import json
 import re
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any
 
 import yaml
 
@@ -18,7 +17,6 @@ from .config import (
     config_to_dict,
     load_training_config,
 )
-from .pipeline import train_and_evaluate
 
 
 @dataclass(slots=True)
@@ -87,7 +85,9 @@ def build_default_designer_draft() -> DesignerDraft:
         test_size="0.2",
         stratify=True,
         tracking_experiment_name="bc-mlops-showcase",
-        model_params_json=json.dumps(DEFAULT_MODEL_PARAMS[DEFAULT_MODEL_KIND], indent=2, sort_keys=True),
+        model_params_json=json.dumps(
+            DEFAULT_MODEL_PARAMS[DEFAULT_MODEL_KIND], indent=2, sort_keys=True
+        ),
     )
 
 
@@ -219,6 +219,8 @@ def launch_designer_run(
     draft: DesignerDraft, *, config_root: Path, output_root: Path
 ) -> DesignerActionResult:
     """Save a draft, train it, and return a structured outcome."""
+
+    from .pipeline import train_and_evaluate
 
     try:
         config_path = save_designer_draft(draft, config_root)

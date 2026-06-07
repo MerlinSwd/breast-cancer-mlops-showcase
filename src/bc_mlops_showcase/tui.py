@@ -27,7 +27,18 @@ from textual.widgets import (
     Static,
 )
 
-RunMode = Literal["runs", "configs"]
+from .designer import (
+    DesignerActionResult,
+    DesignerDraft,
+    build_default_designer_draft,
+    build_designer_draft_from_config,
+    launch_designer_run,
+    render_designer_preview_text,
+    save_designer_draft,
+    validate_designer_draft,
+)
+
+RunMode = Literal["runs", "configs", "designer"]
 RunDetailMode = Literal["run", "artifacts", "actions", "compare", "help"]
 HealthFilter = Literal[
     "all",
@@ -71,6 +82,7 @@ ARTIFACT_KEYS = (
 MODE_OPTIONS: tuple[tuple[str, RunMode], ...] = (
     ("Runs", "runs"),
     ("Configs", "configs"),
+    ("Designer", "designer"),
 )
 SORT_OPTIONS: tuple[tuple[str, str], ...] = (
     ("F1", "f1"),
@@ -92,6 +104,27 @@ HEALTH_FILTER_OPTIONS: tuple[tuple[str, HealthFilter], ...] = (
     ("Registry drift", "registry_drift"),
     ("CV only", "cv_only"),
 )
+DESIGNER_DATASET_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Built-in breast cancer", "sklearn_breast_cancer"),
+    ("CSV tabular binary", "csv_tabular_binary"),
+)
+DESIGNER_MODEL_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Logistic regression", "sklearn_logreg"),
+    ("Random forest", "sklearn_random_forest"),
+    ("XGBoost", "xgboost_classifier"),
+    ("Hist gradient boosting", "sklearn_hist_gradient_boosting"),
+    ("PyTorch MLP", "pytorch_mlp"),
+)
+DESIGNER_DEVICE_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Auto", "auto"),
+    ("CPU", "cpu"),
+    ("CUDA", "cuda"),
+)
+DESIGNER_EVALUATION_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("Holdout", "holdout"),
+    ("Stratified k-fold", "stratified_k_fold"),
+)
+DESIGNER_BOOL_OPTIONS: tuple[tuple[str, str], ...] = (("Yes", "true"), ("No", "false"))
 
 
 @dataclass(slots=True)
@@ -280,6 +313,7 @@ class MerlinDashboardApp(App[None]):
         Binding("s", "cycle_sort", "Sort"),
         Binding("h", "toggle_health_filter", "Health"),
         Binding("tab", "switch_mode", "Mode", priority=True),
+        Binding("n", "open_run_designer", "Design run"),
         Binding("enter", "open_detail", "Detail", priority=True),
         Binding("a", "show_actions", "Actions"),
         Binding("c", "compare_selected_run", "Compare"),
@@ -314,6 +348,10 @@ class MerlinDashboardApp(App[None]):
         self.selected_config_name = self.config_views[0].name if self.config_views else None
         self.compare_anchor_name: str | None = None
         self.artifact_key = "metrics"
+        self.designer_draft = build_default_designer_draft()
+        self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+        self.designer_dirty = False
+        self._is_syncing_designer = False
         self.last_action_result = ActionResult(
             ok=True,
             title="Idle",
@@ -359,6 +397,7 @@ class MerlinDashboardApp(App[None]):
                     yield Button("Actions", id="actions-button", classes="toolbar-button")
                     yield Button("Compare", id="compare-button", classes="toolbar-button")
                     yield Button("Help", id="help-button", classes="toolbar-button")
+                    yield Button("Design Run", id="design-run-button", classes="toolbar-button")
             with Vertical(classes="control-group -last"):
                 yield Static("Run Actions", classes="section-title")
                 with Horizontal():
@@ -375,6 +414,79 @@ class MerlinDashboardApp(App[None]):
                 with Vertical(id="details-pane"):
                     yield Static("Run Details", classes="section-title")
                     yield Static("", id="run-details")
+                    with Vertical(id="designer-form"):
+                        yield Static("Run Designer", classes="section-title")
+                        with Horizontal():
+                            yield Button(
+                                "Load Defaults",
+                                id="designer-load-defaults-button",
+                                classes="toolbar-button",
+                            )
+                            yield Button(
+                                "Clone Config",
+                                id="designer-clone-config-button",
+                                classes="toolbar-button",
+                            )
+                            yield Button(
+                                "Preview YAML",
+                                id="designer-preview-button",
+                                classes="toolbar-button",
+                            )
+                        with Horizontal():
+                            yield Button(
+                                "Validate Draft",
+                                id="designer-validate-button",
+                                classes="toolbar-button",
+                            )
+                            yield Button(
+                                "Save Config", id="designer-save-button", classes="toolbar-button"
+                            )
+                            yield Button(
+                                "Launch Run", id="designer-launch-button", classes="toolbar-button"
+                            )
+                        yield Input(placeholder="Experiment name", id="designer-experiment-name")
+                        yield Input(placeholder="Config slug", id="designer-config-slug")
+                        yield Select(
+                            DESIGNER_DATASET_OPTIONS,
+                            value=self.designer_draft.dataset_kind,
+                            allow_blank=False,
+                            id="designer-dataset-kind",
+                        )
+                        yield Input(placeholder="Dataset path", id="designer-dataset-path")
+                        yield Input(placeholder="Target column", id="designer-target-column")
+                        yield Select(
+                            DESIGNER_MODEL_OPTIONS,
+                            value=self.designer_draft.model_kind,
+                            allow_blank=False,
+                            id="designer-model-kind",
+                        )
+                        yield Select(
+                            DESIGNER_DEVICE_OPTIONS,
+                            value=self.designer_draft.device,
+                            allow_blank=False,
+                            id="designer-device",
+                        )
+                        yield Select(
+                            DESIGNER_EVALUATION_OPTIONS,
+                            value=self.designer_draft.evaluation_mode,
+                            allow_blank=False,
+                            id="designer-evaluation-mode",
+                        )
+                        yield Input(placeholder="Folds", id="designer-folds")
+                        yield Input(placeholder="Random seed", id="designer-random-seed")
+                        yield Input(placeholder="Threshold", id="designer-threshold")
+                        yield Input(placeholder="Test size", id="designer-test-size")
+                        yield Select(
+                            DESIGNER_BOOL_OPTIONS,
+                            value="true" if self.designer_draft.stratify else "false",
+                            allow_blank=False,
+                            id="designer-stratify",
+                        )
+                        yield Input(
+                            placeholder="Tracking experiment",
+                            id="designer-tracking-experiment-name",
+                        )
+                        yield Input(placeholder="Model params JSON", id="designer-model-params")
                 with Vertical(id="task-pane"):
                     yield Static("Task Status", classes="section-title")
                     yield Static("", id="task-status")
@@ -384,15 +496,27 @@ class MerlinDashboardApp(App[None]):
     def on_mount(self) -> None:
         self._refresh_view(query="")
         self._refresh_controls()
+        self._refresh_designer_form()
+        self._set_designer_visibility()
         self.query_one("#run-list", ListView).focus()
-        self._refresh_status("Ready. / filter • tab mode • enter detail • a actions • ? help.")
+        self._refresh_status(
+            "Ready. / filter • tab mode • n designer • enter detail • a actions • ? help."
+        )
         self._refresh_task_status()
 
     def action_focus_filter(self) -> None:
         self.query_one("#run-filter", Input).focus()
 
     def action_switch_mode(self) -> None:
-        self._set_mode("configs" if self.mode == "runs" else "runs")
+        next_mode = {
+            "runs": "configs",
+            "configs": "designer",
+            "designer": "runs",
+        }[self.mode]
+        self._set_mode(next_mode)
+
+    def action_open_run_designer(self) -> None:
+        self._set_mode("designer")
 
     def action_cycle_sort(self) -> None:
         if self.mode != "runs":
@@ -484,14 +608,20 @@ class MerlinDashboardApp(App[None]):
         self._execute_selected_action("retrain")
 
     def on_input_changed(self, event: Input.Changed) -> None:
-        if event.input.id != "run-filter":
+        if event.input.id == "run-filter":
+            self._refresh_view(query=event.value)
             return
-        self._refresh_view(query=event.value)
+        if event.input.id and event.input.id.startswith("designer-"):
+            self._update_designer_draft_from_widgets()
+            return
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        if event.input.id != "run-filter":
+        if event.input.id == "run-filter":
+            self._refresh_view(query=event.value)
             return
-        self._refresh_view(query=event.value)
+        if event.input.id and event.input.id.startswith("designer-"):
+            self._update_designer_draft_from_widgets()
+            return
 
     def on_list_view_selected(self, event: ListView.Selected) -> None:
         del event
@@ -515,6 +645,8 @@ class MerlinDashboardApp(App[None]):
             self.action_compare_selected_run()
         elif button_id == "help-button":
             self.action_toggle_help()
+        elif button_id == "design-run-button":
+            self.action_open_run_designer()
         elif button_id == "validate-button":
             self.action_validate_selected_run()
         elif button_id == "report-button":
@@ -523,12 +655,37 @@ class MerlinDashboardApp(App[None]):
             self.action_predict_selected_run()
         elif button_id == "retrain-button":
             self.action_retrain_selected_run()
+        elif button_id == "designer-load-defaults-button":
+            self._load_designer_defaults()
+        elif button_id == "designer-clone-config-button":
+            self._clone_selected_config_into_designer()
+        elif button_id == "designer-preview-button":
+            self._preview_designer_draft()
+        elif button_id == "designer-validate-button":
+            self._validate_designer_draft()
+        elif button_id == "designer-save-button":
+            self._save_designer_draft()
+        elif button_id == "designer-launch-button":
+            self._launch_designer_draft()
 
     def on_select_changed(self, event: Select.Changed) -> None:
-        if self._is_syncing_controls or event.select.id is None:
+        if event.select.id is None:
             return
         value = event.value
         if value == Select.BLANK:
+            return
+        if event.select.id in {
+            "designer-dataset-kind",
+            "designer-model-kind",
+            "designer-device",
+            "designer-evaluation-mode",
+            "designer-stratify",
+        }:
+            if self._is_syncing_designer:
+                return
+            self._update_designer_draft_from_widgets()
+            return
+        if self._is_syncing_controls:
             return
         if event.select.id == "mode-select":
             self._set_mode(value)
@@ -539,6 +696,116 @@ class MerlinDashboardApp(App[None]):
         if event.select.id == "health-select":
             self._set_health_filter(value)
             return
+
+    def _load_designer_defaults(self) -> None:
+        self.designer_draft = build_default_designer_draft()
+        self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+        self.designer_dirty = False
+        self._refresh_designer_form()
+        self._refresh_details()
+        self._refresh_status("Loaded default run designer template.")
+
+    def _clone_selected_config_into_designer(self) -> None:
+        config_name = self.selected_config_name
+        if config_name is None:
+            self._refresh_status("No config selected to clone into the designer.")
+            return
+        config_view = next((view for view in self.config_views if view.name == config_name), None)
+        if config_view is None:
+            self._refresh_status("Selected config is no longer available.")
+            return
+        from .config import load_training_config
+
+        self.designer_draft = build_designer_draft_from_config(
+            load_training_config(config_view.path),
+            source_name=config_name,
+        )
+        self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+        self.designer_dirty = False
+        self._set_mode("designer")
+        self._refresh_designer_form()
+        self._refresh_details()
+        self._refresh_status(f"Cloned {config_name} into the run designer.")
+
+    def _preview_designer_draft(self) -> None:
+        self._update_designer_draft_from_widgets()
+        self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+        self._refresh_details()
+        self._refresh_status("Rendered normalized run designer preview.")
+
+    def _validate_designer_draft(self) -> None:
+        self._update_designer_draft_from_widgets()
+        result = validate_designer_draft(self.designer_draft)
+        if result.ok:
+            self.designer_preview_text = render_designer_preview_text(self.designer_draft)
+            self.last_action_result = ActionResult(
+                ok=True,
+                title="Designer draft valid",
+                message=f"Draft {self.designer_draft.config_slug}.yaml is ready.",
+                output=self.designer_preview_text,
+            )
+        else:
+            self.last_action_result = ActionResult(
+                ok=False,
+                title="Designer draft invalid",
+                message="Validation failed for the current draft.",
+                output="\n".join(result.errors),
+            )
+        self._refresh_task_status()
+        self._refresh_details()
+        self._refresh_status(self.last_action_result.message)
+
+    def _save_designer_draft(self) -> None:
+        self._update_designer_draft_from_widgets()
+        try:
+            path = save_designer_draft(self.designer_draft, self.config_root)
+        except Exception as exc:
+            self.last_action_result = ActionResult(
+                ok=False,
+                title="Designer save failed",
+                message=f"Could not save {self.designer_draft.config_slug}.yaml.",
+                output=str(exc),
+            )
+        else:
+            self.last_action_result = ActionResult(
+                ok=True,
+                title="Designer config saved",
+                message=f"Saved {path.name}.",
+                output=str(path),
+            )
+            self.designer_dirty = False
+            self.config_views = load_config_views(self.config_root)
+            self.selected_config_name = path.stem
+        self._refresh_task_status()
+        self._refresh_view(query=self._current_query())
+        self._refresh_status(self.last_action_result.message)
+
+    def _launch_designer_draft(self) -> None:
+        self._update_designer_draft_from_widgets()
+        result = launch_designer_run(
+            self.designer_draft,
+            config_root=self.config_root,
+            output_root=self.run_root,
+        )
+        self.last_action_result = self._action_result_from_designer_result(result)
+        if result.ok:
+            self.designer_dirty = False
+            self.summary = load_dashboard_summary(
+                registry_path=self.registry_path,
+                run_root=self.run_root,
+            )
+            self.config_views = load_config_views(self.config_root)
+        self._refresh_task_status()
+        self._refresh_view(query=self._current_query())
+        self._refresh_status(self.last_action_result.message)
+
+    def _action_result_from_designer_result(self, result: DesignerActionResult) -> ActionResult:
+        return ActionResult(
+            ok=result.ok,
+            title=result.title,
+            message=result.message,
+            output=result.output,
+        )
 
     def _execute_selected_action(self, action: str) -> None:
         if self.mode != "runs":
@@ -563,6 +830,63 @@ class MerlinDashboardApp(App[None]):
     def _current_query(self) -> str:
         return self.query_one("#run-filter", Input).value
 
+    def _refresh_designer_form(self) -> None:
+        self._is_syncing_designer = True
+        self.query_one(
+            "#designer-experiment-name", Input
+        ).value = self.designer_draft.experiment_name
+        self.query_one("#designer-config-slug", Input).value = self.designer_draft.config_slug
+        self.query_one("#designer-dataset-kind", Select).value = self.designer_draft.dataset_kind
+        self.query_one("#designer-dataset-path", Input).value = self.designer_draft.dataset_path
+        self.query_one("#designer-target-column", Input).value = self.designer_draft.target_column
+        self.query_one("#designer-model-kind", Select).value = self.designer_draft.model_kind
+        self.query_one("#designer-device", Select).value = self.designer_draft.device
+        self.query_one(
+            "#designer-evaluation-mode", Select
+        ).value = self.designer_draft.evaluation_mode
+        self.query_one("#designer-folds", Input).value = self.designer_draft.folds
+        self.query_one("#designer-random-seed", Input).value = self.designer_draft.random_seed
+        self.query_one("#designer-threshold", Input).value = self.designer_draft.threshold
+        self.query_one("#designer-test-size", Input).value = self.designer_draft.test_size
+        self.query_one("#designer-stratify", Select).value = (
+            "true" if self.designer_draft.stratify else "false"
+        )
+        self.query_one(
+            "#designer-tracking-experiment-name", Input
+        ).value = self.designer_draft.tracking_experiment_name
+        self.query_one(
+            "#designer-model-params", Input
+        ).value = self.designer_draft.model_params_json
+        self._is_syncing_designer = False
+
+    def _set_designer_visibility(self) -> None:
+        self.query_one("#designer-form", Vertical).display = self.mode == "designer"
+
+    def _update_designer_draft_from_widgets(self) -> None:
+        if self._is_syncing_designer:
+            return
+        self.designer_draft = DesignerDraft(
+            experiment_name=self.query_one("#designer-experiment-name", Input).value,
+            config_slug=self.query_one("#designer-config-slug", Input).value,
+            random_seed=self.query_one("#designer-random-seed", Input).value,
+            threshold=self.query_one("#designer-threshold", Input).value,
+            dataset_kind=str(self.query_one("#designer-dataset-kind", Select).value),
+            dataset_path=self.query_one("#designer-dataset-path", Input).value,
+            target_column=self.query_one("#designer-target-column", Input).value,
+            model_kind=str(self.query_one("#designer-model-kind", Select).value),
+            device=str(self.query_one("#designer-device", Select).value),
+            evaluation_mode=str(self.query_one("#designer-evaluation-mode", Select).value),
+            folds=self.query_one("#designer-folds", Input).value,
+            test_size=self.query_one("#designer-test-size", Input).value,
+            stratify=str(self.query_one("#designer-stratify", Select).value) == "true",
+            tracking_experiment_name=self.query_one(
+                "#designer-tracking-experiment-name", Input
+            ).value,
+            model_params_json=self.query_one("#designer-model-params", Input).value,
+            source_name=self.designer_draft.source_name,
+        )
+        self.designer_dirty = True
+
     def _refresh_controls(self) -> None:
         self._is_syncing_controls = True
         self.query_one("#mode-select", Select).value = self.mode
@@ -573,9 +897,13 @@ class MerlinDashboardApp(App[None]):
     def _set_mode(self, mode: RunMode) -> None:
         if mode == self.mode:
             self._refresh_controls()
+            self._set_designer_visibility()
             return
         self.mode = mode
         self.detail_mode = "run"
+        self._set_designer_visibility()
+        if self.mode == "designer":
+            self._refresh_designer_form()
         self._refresh_view(query=self._current_query())
         self._refresh_status("Switched workspace lane.")
 
@@ -603,9 +931,7 @@ class MerlinDashboardApp(App[None]):
         self.health_filter = health_filter
         self.selected_run_name = None
         self._refresh_view(query=self._current_query())
-        self._refresh_status(
-            f"Health filter set to {_health_filter_label(self.health_filter)}."
-        )
+        self._refresh_status(f"Health filter set to {_health_filter_label(self.health_filter)}.")
 
     def _current_visible_runs(self) -> list[DashboardRunView]:
         return select_run_views(
@@ -625,6 +951,7 @@ class MerlinDashboardApp(App[None]):
         self._refresh_overview()
         self._refresh_task_status()
         self._refresh_controls()
+        self._set_designer_visibility()
 
     def _refresh_list(self, query: str) -> None:
         run_list = self.query_one("#run-list", ListView)
@@ -654,8 +981,7 @@ class MerlinDashboardApp(App[None]):
             for index, run_view in enumerate(run_views):
                 issue_marker = f" · issues={run_view.issue_count}" if run_view.issue_count else ""
                 label = (
-                    f"{run_view.run_name} [{run_view.model_kind}] "
-                    f"F1={run_view.f1}{issue_marker}"
+                    f"{run_view.run_name} [{run_view.model_kind}] F1={run_view.f1}{issue_marker}"
                 )
                 run_list.append(ListItem(Label(label), name=run_view.run_name))
                 if run_view.run_name == selected_name:
@@ -669,7 +995,12 @@ class MerlinDashboardApp(App[None]):
         config_views = select_config_views(self.config_views, query=query)
         if not config_views:
             self.selected_config_name = None
-            run_list.append(ListItem(Label("No configs match that filter."), name=""))
+            empty_label = (
+                "No configs match that filter."
+                if self.mode == "configs"
+                else "No config templates match that filter."
+            )
+            run_list.append(ListItem(Label(empty_label), name=""))
             self._is_refreshing_list = False
             return
 
@@ -680,10 +1011,8 @@ class MerlinDashboardApp(App[None]):
 
         selected_index = 0
         for index, config_view in enumerate(config_views):
-            label = (
-                f"{config_view.name} [{config_view.model_kind}] "
-                f"dataset={config_view.dataset_kind}"
-            )
+            prefix = "Template" if self.mode == "designer" else config_view.name
+            label = f"{prefix} [{config_view.model_kind}] dataset={config_view.dataset_kind}"
             run_list.append(ListItem(Label(label), name=config_view.name))
             if config_view.name == selected_name:
                 selected_index = index
@@ -706,11 +1035,27 @@ class MerlinDashboardApp(App[None]):
                 )
             )
             return
+        if self.mode == "configs":
+            overview.update(
+                build_config_overview_text(
+                    self.config_views,
+                    self._current_visible_configs(),
+                    self._current_query(),
+                )
+            )
+            return
         overview.update(
-            build_config_overview_text(
-                self.config_views,
-                self._current_visible_configs(),
-                self._current_query(),
+            "\n".join(
+                [
+                    "Run Designer",
+                    f"Selected template: {self.selected_config_name or 'defaults'}",
+                    f"Draft slug: {self.designer_draft.config_slug}",
+                    f"Dirty: {'yes' if self.designer_dirty else 'no'}",
+                    (
+                        "Buttons: Load Defaults • Clone Config • Preview YAML • "
+                        "Validate Draft • Save Config • Launch Run"
+                    ),
+                ]
             )
         )
 
@@ -736,6 +1081,10 @@ class MerlinDashboardApp(App[None]):
         details = self.query_one("#run-details", Static)
         if self.detail_mode == "help":
             details.update(build_help_text())
+            return
+
+        if self.mode == "designer":
+            details.update(self.designer_preview_text)
             return
 
         if self.mode == "configs":
@@ -1281,10 +1630,17 @@ def build_action_catalog_text(selected_run_name: str | None) -> str:
             f"Selected run: {run_name}",
             "",
             "Toolbar:",
-            "- Buttons for Reload, Actions, Compare, Help, Validate, Report, Predict, and Retrain",
+            "- Buttons for Reload, Actions, Compare, Help, Design Run, Validate,",
+            "  Report, Predict, and Retrain",
             "- Menus for Mode, Sort, and Health filter at the top of the deck",
             "",
-            "Hotkeys:",
+            "Designer:",
+            "- n or Design Run opens the run designer lane",
+            "- Clone Config seeds a new draft from the selected template",
+            "- Preview YAML, Validate Draft, Save Config, and Launch Run drive the",
+            "  end-to-end authoring flow",
+            "",
+            "Run hotkeys:",
             "- v → validate selected run against configs/quality_gates.yaml",
             "- m → generate MODEL_CARD.md for the selected run",
             "- p → predict from sample-inputs/sample.json using the selected model",
@@ -1302,15 +1658,20 @@ def build_help_text() -> str:
         [
             "Keyboard Help",
             "Toolbar and menus:",
-            "- top menus switch mode, sort order, and triage filter without memorizing hotkeys",
-            "- top buttons trigger reload, actions, compare, help, validate, report,",
-            "  predict, and retrain",
+            "- top menus switch mode, sort order, triage filter, and the designer lane",
+            "- top buttons trigger reload, actions, compare, help, design-run,",
+            "  validate, report, predict, and retrain",
+            "",
+            "Designer lane:",
+            "- n opens the run designer directly",
+            "- designer buttons load defaults, clone configs, preview YAML, validate,",
+            "  save reusable configs, and launch runs",
             "",
             "Hotkeys:",
             "- / focus filter",
             "- s cycle sort",
             "- h cycle triage filter",
-            "- tab switch runs/configs workspace lanes",
+            "- tab switch runs/configs/designer workspace lanes",
             "- enter open artifact drill-down / cycle artifact file",
             "- a open action catalog",
             "- c compare selected run",
@@ -1449,9 +1810,7 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
     runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
     dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
     evaluation = (
-        payload.get("evaluation", {})
-        if isinstance(payload.get("evaluation", {}), dict)
-        else {}
+        payload.get("evaluation", {}) if isinstance(payload.get("evaluation", {}), dict) else {}
     )
     mlflow = payload.get("mlflow", {}) if isinstance(payload.get("mlflow", {}), dict) else {}
     return {
