@@ -113,6 +113,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 - evaluation strategy visibility for tracked runs, including stratified k-fold champion summaries
 - artifact health checks for model files, metrics, and model cards
 - fold-level cross-validation summaries for stratified k-fold Coimbra runs via `fold_metrics.json`
+- compare-view stability signals, including per-run cross-validation F1 dispersion (`F1 σ`) in the dashboard and dossier
 - registry-versus-disk drift, including orphan run directories and stale registry entries
 - operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
 
@@ -122,6 +123,7 @@ The interactive deck adds:
 - keyboard navigation across tracked runs
 - an overview pane with champion, visible-run counts, current sort, and search state
 - a richer run dossier with timestamp, train/test rows, runtime, dataset, MLflow IDs, and artifact paths
+- cross-validation stability summaries in the selected run dossier when `fold_metrics.json` is present
 - a detail pane for the selected run with metric deltas vs the champion
 - ready-to-run operator actions in the selected run dossier for `validate` and `report`
 - unhealthy-only mode to isolate runs missing artifacts or model cards

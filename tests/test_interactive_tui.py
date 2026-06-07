@@ -268,6 +268,37 @@ def test_build_run_detail_text_surfaces_evaluation_strategy(tmp_path: Path) -> N
     assert "Evaluation: stratified_k_fold (5 folds)" in detail_text
 
 
+def test_build_run_detail_text_surfaces_kfold_stability_summary(tmp_path: Path) -> None:
+    from bc_mlops_showcase.tui import load_dashboard_summary
+
+    registry_path, run_root = _seed_registry(tmp_path)
+    kfold_run_dir = run_root / "baseline-logreg-20260607T120000Z"
+    metadata = json.loads((kfold_run_dir / "metadata.json").read_text())
+    metadata["evaluation"] = {"mode": "stratified_k_fold", "folds": 5}
+    (kfold_run_dir / "metadata.json").write_text(json.dumps(metadata))
+    (kfold_run_dir / "fold_metrics.json").write_text(
+        json.dumps(
+            {
+                "evaluation_mode": "stratified_k_fold",
+                "fold_count": 5,
+                "summary": {
+                    "f1": {"mean": 0.9861, "std": 0.0215},
+                    "roc_auc": {"mean": 0.9954, "std": 0.0082},
+                },
+            }
+        )
+    )
+
+    summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
+    detail_text = build_run_detail_text(
+        summary,
+        selected_run_name="baseline-logreg-20260607T120000Z",
+    )
+
+    assert "CV F1: mean=0.9861 std=0.0215" in detail_text
+    assert "CV ROC AUC: mean=0.9954 std=0.0082" in detail_text
+
+
 def test_build_run_detail_text_counts_multiple_artifact_issues(tmp_path: Path) -> None:
     from bc_mlops_showcase.tui import load_dashboard_summary
 

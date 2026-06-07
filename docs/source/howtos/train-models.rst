@@ -66,3 +66,6 @@ Review these files in the run directory:
 The dashboard and interactive command deck now surface ready-to-run operator commands for
 ``bc-mlops validate`` and ``bc-mlops report`` so the next verification step is visible next to
 artifact health, champion selection, and the evaluation mode that produced a highlighted run.
+For stratified k-fold runs they also surface cross-validation stability directly from
+``fold_metrics.json`` so operators can compare per-run ``F1 σ`` values and dossier-level
+mean/std summaries without opening the raw JSON by hand.

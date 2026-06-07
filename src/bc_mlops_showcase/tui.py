@@ -349,6 +349,10 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
             "test_rows",
             "evaluation_mode",
             "evaluation_folds",
+            "cv_f1_mean",
+            "cv_f1_std",
+            "cv_roc_auc_mean",
+            "cv_roc_auc_std",
             "dataset_kind",
             "dataset_path",
             "target_column",
@@ -564,6 +568,8 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
     target_column = str(run.get("target_column", "n/a"))
     model_artifact = str(run.get("model_artifact", "unknown"))
     dataset_path = str(run.get("dataset_path", "n/a"))
+    cv_f1_summary = _format_cv_summary_line(run, metric_key="f1", label="CV F1")
+    cv_roc_auc_summary = _format_cv_summary_line(run, metric_key="roc_auc", label="CV ROC AUC")
     operator_actions = _operator_action_lines(selected_run_name)
     return "\n".join(
         [
@@ -580,6 +586,8 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
             f"- Timestamp: {timestamp}",
             f"- Rows: train={train_rows} test={test_rows}",
             f"- Evaluation: {evaluation_strategy}",
+            f"- {cv_f1_summary}",
+            f"- {cv_roc_auc_summary}",
             f"- Runtime: {runtime_framework} on {runtime_device}",
             f"- MLflow run id: {mlflow_run_id}",
             f"- Tracking URI: {mlflow_tracking_uri}",
@@ -617,6 +625,14 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
         return {}
 
     payload = _safe_json_file(metadata_path, default={})
+    fold_metrics = _safe_json_file(run_dir / "fold_metrics.json", default={})
+    fold_summary = (
+        fold_metrics.get("summary", {}) if isinstance(fold_metrics.get("summary", {}), dict) else {}
+    )
+    f1_summary = fold_summary.get("f1", {}) if isinstance(fold_summary.get("f1", {}), dict) else {}
+    roc_auc_summary = (
+        fold_summary.get("roc_auc", {}) if isinstance(fold_summary.get("roc_auc", {}), dict) else {}
+    )
     model = payload.get("model", {}) if isinstance(payload.get("model", {}), dict) else {}
     runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
     dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
@@ -633,6 +649,10 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
         "test_rows": payload.get("test_rows"),
         "evaluation_mode": evaluation.get("mode"),
         "evaluation_folds": evaluation.get("folds"),
+        "cv_f1_mean": f1_summary.get("mean"),
+        "cv_f1_std": f1_summary.get("std"),
+        "cv_roc_auc_mean": roc_auc_summary.get("mean"),
+        "cv_roc_auc_std": roc_auc_summary.get("std"),
         "dataset_kind": dataset.get("kind"),
         "dataset_path": dataset.get("path"),
         "target_column": dataset.get("target_column"),
@@ -734,6 +754,24 @@ def _format_metric(run: dict[str, object], key: str) -> str:
         return f"{float(value):.4f}"
     except (TypeError, ValueError):
         return "n/a"
+
+
+def _format_summary_metric(run: dict[str, object], key: str) -> str:
+    value = run.get(key)
+    try:
+        return f"{float(value):.4f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _format_cv_summary_line(run: dict[str, object], *, metric_key: str, label: str) -> str:
+    mean_key = f"cv_{metric_key}_mean"
+    std_key = f"cv_{metric_key}_std"
+    mean_text = _format_summary_metric(run, mean_key)
+    std_text = _format_summary_metric(run, std_key)
+    if mean_text == "n/a" and std_text == "n/a":
+        return f"{label}: n/a"
+    return f"{label}: mean={mean_text} std={std_text}"
 
 
 def _ok_or_missing(path: Path, label: str) -> str:
@@ -839,6 +877,7 @@ def _comparison_panel(summary: DashboardSummary) -> Panel:
     table.add_column("Model", no_wrap=True)
     table.add_column("F1", justify="right", no_wrap=True)
     table.add_column("ΔF1 vs champ", justify="right", no_wrap=True)
+    table.add_column("F1 σ", justify="right", no_wrap=True)
 
     run_views = select_run_views(
         summary,
@@ -858,10 +897,11 @@ def _comparison_panel(summary: DashboardSummary) -> Panel:
             run_view.model_kind,
             run_view.f1,
             _format_delta_vs_champion(summary.best_run, run),
+            _format_summary_metric(run, "cv_f1_std"),
         )
 
     if not run_views:
-        table.add_row("—", "—", "—", "—", "—")
+        table.add_row("—", "—", "—", "—", "—", "—")
 
     return Panel(table, border_style="magenta", title="Compare View")
 

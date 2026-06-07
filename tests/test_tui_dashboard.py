@@ -342,10 +342,89 @@ def test_render_dashboard_text_includes_compare_view_rank_and_delta(tmp_path: Pa
     assert "Compare View" in output
     assert "Rank" in output
     assert "ΔF1 vs champ" in output
+    assert "F1 σ" in output
     assert "champion-run" in output
     assert "runner-up-run" in output
     assert "+0.0000" in output
     assert "-0.0060" in output
+
+
+def test_render_dashboard_text_surfaces_kfold_dispersion_in_compare_view(tmp_path: Path) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    champion_dir = _seed_run(
+        run_root,
+        "champion-run",
+        model_artifact="model.joblib",
+        with_model_card=True,
+    )
+    challenger_dir = _seed_run(
+        run_root,
+        "challenger-run",
+        model_artifact="model.joblib",
+        with_model_card=True,
+    )
+    for run_dir, f1_std in ((champion_dir, 0.0123), (challenger_dir, 0.0456)):
+        metadata = json.loads((run_dir / "metadata.json").read_text())
+        metadata["evaluation"] = {"mode": "stratified_k_fold", "folds": 5}
+        (run_dir / "metadata.json").write_text(json.dumps(metadata))
+        (run_dir / "fold_metrics.json").write_text(
+            json.dumps(
+                {
+                    "evaluation_mode": "stratified_k_fold",
+                    "fold_count": 5,
+                    "summary": {
+                        "f1": {"mean": 0.98, "std": f1_std},
+                    },
+                }
+            )
+        )
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "champion-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    },
+                    {
+                        "run_name": "challenger-run",
+                        "accuracy": 0.9785,
+                        "f1": 0.9801,
+                        "roc_auc": 0.9930,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155804Z",
+                        "model_kind": "sklearn_random_forest",
+                        "mlflow_run_id": "run-456",
+                    },
+                ],
+                "best_run": {
+                    "run_name": "champion-run",
+                    "accuracy": 0.9825,
+                    "f1": 0.9861,
+                    "roc_auc": 0.9954,
+                    "experiment_name": "baseline-logreg",
+                    "timestamp": "20260606T155803Z",
+                    "model_kind": "sklearn_logreg",
+                    "mlflow_run_id": "run-123",
+                },
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=120)
+
+    assert "F1 σ" in output
+    assert "0.0123" in output
+    assert "0.0456" in output
 
 
 def test_render_dashboard_text_suggests_validate_and_report_commands_for_best_run(
