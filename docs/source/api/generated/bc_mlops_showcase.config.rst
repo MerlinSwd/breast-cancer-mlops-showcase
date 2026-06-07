@@ -10,6 +10,7 @@ bc\_mlops\_showcase.config
    
       config_to_dict
       load_training_config
+      validate_model_device
    
    .. rubric:: Classes
 

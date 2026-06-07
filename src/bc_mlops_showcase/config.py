@@ -15,6 +15,17 @@ import yaml
 
 DEFAULT_MODEL_KIND = "sklearn_logreg"
 DEFAULT_DATASET_KIND = "sklearn_breast_cancer"
+MODEL_KIND_LABELS: dict[str, str] = {
+    "sklearn_logreg": "Logistic regression",
+    "sklearn_random_forest": "Random forest",
+    "sklearn_hist_gradient_boosting": "Hist gradient boosting",
+    "pytorch_mlp": "PyTorch MLP",
+}
+SUPPORTED_MODEL_KINDS: tuple[str, ...] = tuple(MODEL_KIND_LABELS)
+MODEL_KIND_OPTIONS: tuple[tuple[str, str], ...] = tuple(
+    (label, kind) for kind, label in MODEL_KIND_LABELS.items()
+)
+MODEL_DEVICE_OPTIONS: tuple[str, ...] = ("auto", "cpu", "cuda")
 DEFAULT_MODEL_PARAMS: dict[str, dict[str, Any]] = {
     "sklearn_logreg": {
         "c": 1.0,
@@ -78,13 +89,23 @@ class DatasetConfig:
 
 @dataclass(slots=True)
 class ModelConfig:
-    """Backend model selection and hyperparameters."""
+    """Model family and hyperparameters."""
 
     kind: str = DEFAULT_MODEL_KIND
     device: str = "auto"
     params: dict[str, Any] = field(
         default_factory=lambda: deepcopy(DEFAULT_MODEL_PARAMS[DEFAULT_MODEL_KIND])
     )
+
+
+def validate_model_device(device: str) -> str:
+    """Validate and normalize the requested runtime device."""
+
+    if device not in MODEL_DEVICE_OPTIONS:
+        raise ValueError(
+            f"unsupported model device: {device}; expected one of {', '.join(MODEL_DEVICE_OPTIONS)}"
+        )
+    return device
 
 
 @dataclass(slots=True)
@@ -130,7 +151,7 @@ def _resolve_model_config(values: dict[str, Any] | None) -> ModelConfig:
     base_params.update(raw.get("params", {}))
     return ModelConfig(
         kind=kind,
-        device=raw.get("device", "auto"),
+        device=validate_model_device(str(raw.get("device", "auto"))),
         params=base_params,
     )
 
