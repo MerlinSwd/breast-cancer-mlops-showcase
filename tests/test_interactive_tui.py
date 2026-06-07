@@ -704,3 +704,78 @@ def test_interactive_dashboard_app_supports_toolbar_buttons_and_select_menus(
             assert calls == ["validate"]
 
     asyncio.run(scenario())
+
+
+def test_interactive_dashboard_app_supports_run_designer_flow(tmp_path: Path) -> None:
+    from textual.widgets import Button, Input, Select, Static
+
+    from bc_mlops_showcase.tui import MerlinDashboardApp
+
+    registry_path, run_root = _seed_registry(tmp_path)
+    config_root = tmp_path / "configs"
+    config_root.mkdir(parents=True)
+    (config_root / "train-demo.yaml").write_text(
+        "experiment_name: demo-run\n"
+        "model:\n"
+        "  kind: sklearn_random_forest\n"
+        "  params:\n"
+        "    n_estimators: 80\n"
+        "dataset:\n"
+        "  kind: csv_tabular_binary\n"
+        "  path: data/breast-cancer-coimbra.csv\n"
+        "  target_column: Classification\n"
+    )
+
+    async def scenario() -> None:
+        app = MerlinDashboardApp(
+            registry_path=registry_path,
+            run_root=run_root,
+            config_root=config_root,
+        )
+        async with app.run_test() as pilot:
+            details = app.query_one("#run-details", Static)
+            task_status = app.query_one("#task-status", Static)
+            mode_select = app.query_one("#mode-select", Select)
+
+            app.query_one("#design-run-button", Button).press()
+            await pilot.pause()
+            assert app.mode == "designer"
+            assert mode_select.value == "designer"
+            assert app.query_one("#designer-experiment-name", Input).value == "baseline-logreg"
+
+            mode_select.value = "configs"
+            await pilot.pause()
+            mode_select.value = "designer"
+            await pilot.pause()
+            app.query_one("#designer-clone-config-button", Button).press()
+            await pilot.pause()
+            assert app.query_one("#designer-experiment-name", Input).value == "demo-run"
+            assert app.query_one("#designer-model-kind", Select).value == "sklearn_random_forest"
+
+            app.query_one("#designer-experiment-name", Input).value = "designer-preview"
+            app.query_one("#designer-config-slug", Input).value = "designer-preview"
+            app.query_one("#designer-preview-button", Button).press()
+            await pilot.pause()
+            assert "Normalized config preview" in str(details.render())
+            assert "experiment_name: designer-preview" in str(details.render())
+
+            app.query_one("#designer-save-button", Button).press()
+            await pilot.pause()
+            assert (config_root / "designer-preview.yaml").exists()
+            assert "designer-preview.yaml" in str(task_status.render())
+
+            app.query_one("#designer-experiment-name", Input).value = "designer-launch"
+            app.query_one("#designer-config-slug", Input).value = "designer-launch"
+            app.query_one("#designer-load-defaults-button", Button).press()
+            await pilot.pause()
+            app.query_one("#designer-experiment-name", Input).value = "designer-launch"
+            app.query_one("#designer-config-slug", Input).value = "designer-launch"
+            app.query_one("#designer-launch-button", Button).press()
+            await pilot.pause()
+            await pilot.pause()
+            assert (config_root / "designer-launch.yaml").exists()
+            launched_runs = sorted(path for path in run_root.iterdir() if path.is_dir())
+            assert any("designer-launch" in path.name for path in launched_runs)
+            assert "designer-launch" in str(task_status.render())
+
+    asyncio.run(scenario())

@@ -1,4 +1,4 @@
-﻿bc\_mlops\_showcase.tui
+bc\_mlops\_showcase.tui
 =======================
 
 .. automodule:: bc_mlops_showcase.tui

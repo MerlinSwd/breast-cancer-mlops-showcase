@@ -13,6 +13,7 @@
    cli
    config
    data
+   designer
    inference
    modeling
    pipeline

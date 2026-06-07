@@ -95,8 +95,11 @@ summaries, and a detail pane with metric deltas versus the champion.
 It also exposes executable in-TUI operator actions for ``validate``,
 ``report``, ``predict``, and ``retrain``; a menu-driven control bar for mode,
 sort order, and health triage; clickable toolbar buttons for reload, actions,
-compare, help, and run-level operations; a task-status pane with
-success/failure feedback and action output previews; artifact drill-down for
+compare, help, run design, and run-level operations; a run-designer lane so
+operators can draft a config, clone an existing template, preview normalized
+YAML, validate it, save it under ``configs/``, and launch training from the
+same deck; a task-status pane with success/failure feedback and action output
+previews; artifact drill-down for
 ``metrics.json``, ``metadata.json``, ``MODEL_CARD.md``,
 ``config.resolved.yaml``, ``fold_metrics.json``, and
 ``feature_importance.csv``; a config-browser mode; a run-to-run compare mode;
@@ -104,9 +107,10 @@ and richer triage filters for unhealthy runs, missing cards, missing models,
 missing metrics, registry drift, and cross-validation-only views.
 
 Use ``s`` to cycle sort order, ``h`` to cycle triage filters, ``tab`` to switch
-between runs and configs, ``enter`` to cycle details and artifacts, ``a`` to
-open the action catalog, ``c`` to pin a compare anchor, ``?`` for help, ``/``
-to focus the filter, ``r`` to reload, and ``q`` to quit.
+between runs, configs, and the designer lane, ``n`` to open the run designer
+directly, ``enter`` to cycle details and artifacts, ``a`` to open the action
+catalog, ``c`` to pin a compare anchor, ``?`` for help, ``/`` to focus the
+filter, ``r`` to reload, and ``q`` to quit.
 
 Validate a trained run
 ----------------------
