@@ -830,3 +830,43 @@ def test_interactive_dashboard_app_supports_model_designer_flow(tmp_path: Path) 
             assert app.query_one("#designer-model-kind", Select).value == "sklearn_random_forest"
 
     asyncio.run(scenario())
+
+
+def test_interactive_dashboard_app_hydrates_model_designer_from_run_draft(tmp_path: Path) -> None:
+    from textual.widgets import Button, Input, Select, Static
+
+    from bc_mlops_showcase.tui import MerlinDashboardApp
+
+    registry_path, run_root = _seed_registry(tmp_path)
+
+    async def scenario() -> None:
+        app = MerlinDashboardApp(
+            registry_path=registry_path,
+            run_root=run_root,
+            config_root=tmp_path / "configs",
+        )
+        async with app.run_test() as pilot:
+            details = app.query_one("#run-details", Static)
+
+            app.query_one("#design-run-button", Button).press()
+            await pilot.pause()
+            app.query_one("#designer-model-kind", Select).value = "sklearn_random_forest"
+            await pilot.pause()
+            app.query_one("#designer-device", Select).value = "cpu"
+            await pilot.pause()
+            app.query_one("#designer-model-params", Input).value = (
+                '{\n  "max_depth": 6,\n  "min_samples_leaf": 2,\n  "n_estimators": 75\n}'
+            )
+            await pilot.pause()
+
+            app.query_one("#design-model-button", Button).press()
+            await pilot.pause()
+
+            assert app.mode == "model-designer"
+            assert app.query_one("#model-designer-kind", Select).value == "sklearn_random_forest"
+            assert app.query_one("#model-designer-device", Select).value == "cpu"
+            assert app.query_one("#model-designer-rf-n-estimators", Input).value == "75"
+            assert app.query_one("#model-designer-rf-max-depth", Input).value == "6"
+            assert "kind: sklearn_random_forest" in str(details.render())
+
+    asyncio.run(scenario())

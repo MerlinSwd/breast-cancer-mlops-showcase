@@ -14,6 +14,7 @@ from .config import (
     SUPPORTED_MODEL_KINDS,
     ModelConfig,
     TrainingConfig,
+    validate_model_device,
 )
 from .designer import DesignerDraft
 
@@ -126,8 +127,7 @@ def _parse_optional_int(raw: str) -> int | None:
 def model_designer_draft_to_model_config(draft: ModelDesignerDraft) -> ModelConfig:
     if draft.model_kind not in SUPPORTED_MODEL_KINDS:
         raise ValueError(f"unsupported model kind: {draft.model_kind}")
-    if draft.device not in MODEL_DEVICE_OPTIONS:
-        raise ValueError(f"unsupported device: {draft.device}")
+    device = validate_model_device(draft.device)
 
     if draft.model_kind == "sklearn_logreg":
         c = float(draft.logreg_c)
@@ -186,7 +186,7 @@ def model_designer_draft_to_model_config(draft: ModelDesignerDraft) -> ModelConf
             "dropout": dropout,
         }
 
-    return ModelConfig(kind=draft.model_kind, device=draft.device, params=params)
+    return ModelConfig(kind=draft.model_kind, device=device, params=params)
 
 
 def validate_model_designer_draft(draft: ModelDesignerDraft) -> ModelDesignerValidationResult:

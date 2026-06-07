@@ -1,6 +1,9 @@
 import json
+from pathlib import Path
 
-from bc_mlops_showcase.config import ModelConfig, TrainingConfig
+import pytest
+
+from bc_mlops_showcase.config import ModelConfig, TrainingConfig, load_training_config
 from bc_mlops_showcase.designer import build_default_designer_draft
 from bc_mlops_showcase.model_designer import (
     apply_model_designer_draft_to_run_draft,
@@ -98,6 +101,19 @@ def test_validate_model_designer_draft_rejects_invalid_device() -> None:
     assert any("device" in error.lower() for error in result.errors)
 
 
+def test_load_training_config_rejects_invalid_model_device(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-device.yaml"
+    path.write_text(
+        "experiment_name: invalid-device\n"
+        "model:\n"
+        "  kind: sklearn_logreg\n"
+        "  device: tpu\n"
+    )
+
+    with pytest.raises(ValueError, match="unsupported model device"):
+        load_training_config(path)
+
+
 def test_blank_max_depth_normalizes_to_none() -> None:
     draft = build_default_model_designer_draft("sklearn_random_forest")
     draft.rf_max_depth = ""
@@ -142,3 +158,25 @@ def test_render_model_designer_preview_text_renders_normalized_yaml() -> None:
     assert "normalized model preview" in preview.lower()
     assert "kind: sklearn_random_forest" in preview
     assert "n_estimators: 80" in preview
+
+
+def test_apply_model_designer_draft_preserves_existing_run_metadata() -> None:
+    run_draft = build_default_designer_draft()
+    run_draft.experiment_name = "custom-run"
+    run_draft.config_slug = "custom-run"
+    run_draft.dataset_kind = "csv_tabular_binary"
+    run_draft.dataset_path = "data/custom.csv"
+    run_draft.target_column = "Diagnosis"
+
+    model_draft = build_default_model_designer_draft("pytorch_mlp")
+    model_draft.device = "cuda"
+    model_draft.mlp_hidden_dims = "128,64"
+
+    updated = apply_model_designer_draft_to_run_draft(model_draft, run_draft)
+
+    assert updated.experiment_name == "custom-run"
+    assert updated.config_slug == "custom-run"
+    assert updated.dataset_path == "data/custom.csv"
+    assert updated.target_column == "Diagnosis"
+    assert updated.model_kind == "pytorch_mlp"
+    assert updated.device == "cuda"

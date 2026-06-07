@@ -89,13 +89,23 @@ class DatasetConfig:
 
 @dataclass(slots=True)
 class ModelConfig:
-    """Backend model selection and hyperparameters."""
+    """Model family and hyperparameters."""
 
     kind: str = DEFAULT_MODEL_KIND
     device: str = "auto"
     params: dict[str, Any] = field(
         default_factory=lambda: deepcopy(DEFAULT_MODEL_PARAMS[DEFAULT_MODEL_KIND])
     )
+
+
+def validate_model_device(device: str) -> str:
+    """Validate and normalize the requested runtime device."""
+
+    if device not in MODEL_DEVICE_OPTIONS:
+        raise ValueError(
+            f"unsupported model device: {device}; expected one of {', '.join(MODEL_DEVICE_OPTIONS)}"
+        )
+    return device
 
 
 @dataclass(slots=True)
@@ -141,7 +151,7 @@ def _resolve_model_config(values: dict[str, Any] | None) -> ModelConfig:
     base_params.update(raw.get("params", {}))
     return ModelConfig(
         kind=kind,
-        device=raw.get("device", "auto"),
+        device=validate_model_device(str(raw.get("device", "auto"))),
         params=base_params,
     )
 

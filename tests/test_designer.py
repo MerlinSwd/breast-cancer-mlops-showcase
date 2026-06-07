@@ -113,6 +113,16 @@ def test_validate_designer_draft_requires_at_least_two_folds() -> None:
     assert any("at least 2" in error for error in result.errors)
 
 
+def test_validate_designer_draft_rejects_invalid_device() -> None:
+    draft = build_default_designer_draft()
+    draft.device = "tpu"
+
+    result = validate_designer_draft(draft)
+
+    assert result.ok is False
+    assert any("unsupported model device" in error for error in result.errors)
+
+
 def test_render_designer_preview_text_renders_normalized_yaml() -> None:
     draft = build_default_designer_draft()
     draft.experiment_name = "preview-me"

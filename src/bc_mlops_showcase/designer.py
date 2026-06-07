@@ -16,6 +16,7 @@ from .config import (
     TrainingConfig,
     config_to_dict,
     load_training_config,
+    validate_model_device,
 )
 
 
@@ -143,7 +144,7 @@ def designer_draft_to_config(draft: DesignerDraft) -> TrainingConfig:
     config.dataset.target_column = draft.target_column.strip() or "target"
 
     config.model.kind = draft.model_kind
-    config.model.device = draft.device.strip() or "auto"
+    config.model.device = validate_model_device(draft.device.strip() or "auto")
     config.model.params = params
 
     if config.dataset.kind == "csv_tabular_binary" and not config.dataset.path:
