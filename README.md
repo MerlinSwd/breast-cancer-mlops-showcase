@@ -13,7 +13,7 @@ single notebook that accidentally escaped into version control.
 - trains reproducible models from YAML configuration
 - switches model families through `model.kind` instead of CLI rewrites
 - switches datasets through `dataset.kind` instead of pipeline rewrites
-- supports `sklearn_logreg`, `sklearn_random_forest`, and `pytorch_mlp` backends
+- supports `sklearn_logreg`, `sklearn_random_forest`, `sklearn_hist_gradient_boosting`, and `pytorch_mlp` backends
 - benchmarks on the built-in sklearn breast-cancer dataset and the Coimbra CSV dataset
 - logs runs, metrics, params, and artifacts to **MLflow**
 - validates trained models against configurable quality gates
@@ -64,6 +64,7 @@ uv run python -m sphinx -W -b html docs/source docs/_build/html
 uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
 ```
 
 ### 5. Inspect results
@@ -210,6 +211,28 @@ model:
     n_estimators: 200
     max_depth: 6
     min_samples_leaf: 2
+```
+
+### Harder Coimbra benchmark with histogram gradient boosting
+
+```yaml
+experiment_name: coimbra-hist-gradient-boosting
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+dataset:
+  kind: csv_tabular_binary
+  path: data/breast-cancer-coimbra.csv
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_hist_gradient_boosting
+  device: cpu
+  params:
+    learning_rate: 0.05
+    max_iter: 200
+    max_depth: 3
+    min_samples_leaf: 3
 ```
 
 ## Training outputs

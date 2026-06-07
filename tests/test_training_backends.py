@@ -157,3 +157,55 @@ model:
     output = json.loads(capsys.readouterr().out)
     assert output["predictions"][0]["label"] in {"benign", "malignant"}
     assert 0.0 <= output["predictions"][0]["probability"] <= 1.0
+
+
+def test_cli_train_and_predict_support_hist_gradient_boosting_on_coimbra_dataset(
+    tmp_path: Path, capsys
+) -> None:
+    config_path = tmp_path / "train.yaml"
+    output_dir = tmp_path / "artifacts"
+    config_path.write_text(
+        f"""
+experiment_name: coimbra-hgb
+tracking:
+  uri: {tmp_path / "mlruns"}
+  experiment_name: integration-tests
+dataset:
+  kind: csv_tabular_binary
+  path: {COIMBRA_DATASET}
+  target_column: Classification
+  positive_label: 2.0
+model:
+  kind: sklearn_hist_gradient_boosting
+  params:
+    learning_rate: 0.05
+    max_iter: 80
+    max_depth: 3
+    min_samples_leaf: 3
+""".strip()
+    )
+
+    assert main(["train", "--config", str(config_path), "--output-dir", str(output_dir)]) == 0
+    capsys.readouterr()
+    run_dir = sorted(path for path in output_dir.iterdir() if path.is_dir())[-1]
+    assert (run_dir / "model.joblib").exists()
+
+    coimbra_frame = pd.read_csv(COIMBRA_DATASET)
+    record = coimbra_frame.drop(columns=["Classification"]).iloc[0].to_dict()
+    payload_path = tmp_path / "sample.json"
+    payload_path.write_text(json.dumps(record))
+
+    exit_code = main(
+        [
+            "predict",
+            "--model",
+            str(run_dir / "model.joblib"),
+            "--input",
+            str(payload_path),
+        ]
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["predictions"][0]["label"] in {"benign", "malignant"}
+    assert 0.0 <= output["predictions"][0]["probability"] <= 1.0

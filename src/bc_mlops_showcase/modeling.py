@@ -10,7 +10,7 @@ import joblib
 import numpy as np
 import pandas as pd
 import torch
-from sklearn.ensemble import RandomForestClassifier
+from sklearn.ensemble import HistGradientBoostingClassifier, RandomForestClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.pipeline import Pipeline
 from sklearn.preprocessing import StandardScaler
@@ -225,6 +225,34 @@ def _train_random_forest_model(
     )
 
 
+def _train_hist_gradient_boosting_model(
+    config: TrainingConfig,
+    X_train: pd.DataFrame,
+    y_train: pd.Series,
+) -> BackendTrainingBundle:
+    classifier = HistGradientBoostingClassifier(
+        learning_rate=float(config.model.params.get("learning_rate", 0.1)),
+        max_iter=int(config.model.params.get("max_iter", 200)),
+        max_depth=(
+            None
+            if config.model.params.get("max_depth") is None
+            else int(config.model.params["max_depth"])
+        ),
+        min_samples_leaf=int(config.model.params.get("min_samples_leaf", 20)),
+        random_state=config.random_seed,
+    )
+    classifier.fit(X_train, y_train)
+    return BackendTrainingBundle(
+        kind="sklearn_hist_gradient_boosting",
+        artifact_filename="model.joblib",
+        feature_names=list(X_train.columns),
+        runtime={"framework": "sklearn", "device": "cpu"},
+        feature_importance=None,
+        _predictor=classifier,
+        _serializer_payload=classifier,
+    )
+
+
 def train_backend(
     config: TrainingConfig,
     X_train: pd.DataFrame,
@@ -236,6 +264,12 @@ def train_backend(
         return _train_sklearn_model(config=config, X_train=X_train, y_train=y_train)
     if config.model.kind == "sklearn_random_forest":
         return _train_random_forest_model(config=config, X_train=X_train, y_train=y_train)
+    if config.model.kind == "sklearn_hist_gradient_boosting":
+        return _train_hist_gradient_boosting_model(
+            config=config,
+            X_train=X_train,
+            y_train=y_train,
+        )
     if config.model.kind == "pytorch_mlp":
         return _train_pytorch_model(config=config, X_train=X_train, y_train=y_train)
     raise ValueError(f"unsupported model kind: {config.model.kind}")

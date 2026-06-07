@@ -33,12 +33,19 @@ Train the PyTorch backend
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
-Train the harder Coimbra benchmark
-----------------------------------
+Train the harder Coimbra benchmark with random forest
+-----------------------------------------------------
 
 .. code-block:: bash
 
    uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+
+Train the harder Coimbra benchmark with histogram gradient boosting
+-------------------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
 
 Compare runs
 ------------

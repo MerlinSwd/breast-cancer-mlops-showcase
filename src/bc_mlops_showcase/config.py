@@ -25,6 +25,12 @@ DEFAULT_MODEL_PARAMS: dict[str, dict[str, Any]] = {
         "max_depth": None,
         "min_samples_leaf": 1,
     },
+    "sklearn_hist_gradient_boosting": {
+        "learning_rate": 0.1,
+        "max_iter": 200,
+        "max_depth": None,
+        "min_samples_leaf": 20,
+    },
     "pytorch_mlp": {
         "hidden_dims": [32, 16],
         "epochs": 20,
@@ -135,6 +141,8 @@ def load_training_config(path: str | Path) -> TrainingConfig:
         else "baseline-pytorch-mlp"
         if model.kind == "pytorch_mlp"
         else "baseline-random-forest"
+        if model.kind == "sklearn_random_forest"
+        else "baseline-hist-gradient-boosting"
     )
     return TrainingConfig(
         experiment_name=experiment_name,

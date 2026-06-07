@@ -15,6 +15,20 @@ Train the PyTorch baseline
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
+Train the Coimbra random-forest benchmark
+-----------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+
+Train the Coimbra histogram-gradient-boosting benchmark
+-------------------------------------------------------
+
+.. code-block:: bash
+
+   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
+
 Compare all recorded runs
 -------------------------
 
