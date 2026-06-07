@@ -511,21 +511,23 @@ def build_overview_text(
     unhealthy_count = sum(status_has_issues(status) for status in summary.artifact_statuses)
     filter_state = "unhealthy only" if unhealthy_only else "all runs"
     search_text = query.strip() or "—"
-
-    return "\n".join(
-        [
-            "Deck Overview",
-            f"Tracked runs: {len(summary.runs)}",
-            f"Visible runs: {len(visible_runs)}",
-            f"Champion: {champion_name}",
-            f"Runs with artifact issues: {unhealthy_count}",
-            f"Orphan run dirs: {len(summary.orphan_run_dirs)}",
-            f"Registry entries without run dirs: {len(summary.missing_run_dirs)}",
-            f"Sort: {sort_key}",
-            f"Health filter: {filter_state}",
-            f"Search: {search_text}",
-        ]
-    )
+    lines = [
+        "Deck Overview",
+        f"Tracked runs: {len(summary.runs)}",
+        f"Visible runs: {len(visible_runs)}",
+        f"Champion: {champion_name}",
+        f"Runs with artifact issues: {unhealthy_count}",
+        f"Orphan run dirs: {len(summary.orphan_run_dirs)}",
+        f"Registry entries without run dirs: {len(summary.missing_run_dirs)}",
+        f"Sort: {sort_key}",
+        f"Health filter: {filter_state}",
+        f"Search: {search_text}",
+    ]
+    if summary.orphan_run_dirs:
+        lines.append(f"Orphans: {', '.join(summary.orphan_run_dirs)}")
+    if summary.missing_run_dirs:
+        lines.append(f"Missing dirs: {', '.join(summary.missing_run_dirs)}")
+    return "\n".join(lines)
 
 
 def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | None) -> str:

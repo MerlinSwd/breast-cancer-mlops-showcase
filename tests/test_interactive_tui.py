@@ -178,6 +178,47 @@ def test_build_overview_text_reports_visible_runs_sort_and_health(tmp_path: Path
     assert "Search: pytorch" in overview
 
 
+def test_build_overview_text_lists_orphan_and_missing_run_names(tmp_path: Path) -> None:
+    from bc_mlops_showcase.tui import load_dashboard_summary
+
+    registry_path, run_root = _seed_registry(tmp_path)
+    _seed_run(
+        run_root,
+        "orphan-run-20260607T121500Z",
+        model_artifact="model.joblib",
+        with_model_card=True,
+        metrics={"accuracy": 0.95, "f1": 0.95, "roc_auc": 0.95},
+    )
+
+    payload = json.loads(registry_path.read_text())
+    payload["runs"].append(
+        {
+            "run_name": "missing-run-20260607T122000Z",
+            "accuracy": 0.9,
+            "f1": 0.9,
+            "roc_auc": 0.9,
+            "model_kind": "sklearn_logreg",
+        }
+    )
+    registry_path.write_text(json.dumps(payload))
+
+    summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
+    visible_runs = select_run_views(summary, query="", sort_key="f1", unhealthy_only=False)
+
+    overview = build_overview_text(
+        summary,
+        visible_runs,
+        sort_key="f1",
+        unhealthy_only=False,
+        query="",
+    )
+
+    assert "Orphan run dirs: 1" in overview
+    assert "Registry entries without run dirs: 1" in overview
+    assert "Orphans: orphan-run-20260607T121500Z" in overview
+    assert "Missing dirs: missing-run-20260607T122000Z" in overview
+
+
 def test_build_run_detail_text_surfaces_selected_run_metrics_and_dossier(tmp_path: Path) -> None:
     from bc_mlops_showcase.tui import load_dashboard_summary
 
