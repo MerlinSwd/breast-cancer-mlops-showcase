@@ -1280,6 +1280,10 @@ def build_action_catalog_text(selected_run_name: str | None) -> str:
             "Action Catalog",
             f"Selected run: {run_name}",
             "",
+            "Toolbar:",
+            "- Buttons for Reload, Actions, Compare, Help, Validate, Report, Predict, and Retrain",
+            "- Menus for Mode, Sort, and Health filter at the top of the deck",
+            "",
             "Hotkeys:",
             "- v → validate selected run against configs/quality_gates.yaml",
             "- m → generate MODEL_CARD.md for the selected run",
@@ -1297,6 +1301,12 @@ def build_help_text() -> str:
     return "\n".join(
         [
             "Keyboard Help",
+            "Toolbar and menus:",
+            "- top menus switch mode, sort order, and triage filter without memorizing hotkeys",
+            "- top buttons trigger reload, actions, compare, help, validate, report,",
+            "  predict, and retrain",
+            "",
+            "Hotkeys:",
             "- / focus filter",
             "- s cycle sort",
             "- h cycle triage filter",

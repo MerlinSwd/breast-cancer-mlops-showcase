@@ -129,6 +129,8 @@ The interactive deck adds:
 - cross-validation stability summaries in the selected run dossier when `fold_metrics.json` is present
 - a detail pane for the selected run with metric deltas vs the champion
 - executable in-TUI operator actions for `validate`, `report`, `predict`, and `retrain`
+- a top control bar with menu-style selectors for mode, sort order, and health triage
+- clickable toolbar buttons for reload, actions, compare, help, and run-level operations
 - a task-status pane with success/failure feedback and action output previews
 - artifact drill-down for `metrics.json`, `metadata.json`, `MODEL_CARD.md`, `config.resolved.yaml`, `fold_metrics.json`, and `feature_importance.csv`
 - a config-browser mode so you can inspect training YAMLs without leaving the TUI
