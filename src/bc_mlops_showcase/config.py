@@ -15,6 +15,17 @@ import yaml
 
 DEFAULT_MODEL_KIND = "sklearn_logreg"
 DEFAULT_DATASET_KIND = "sklearn_breast_cancer"
+MODEL_KIND_LABELS: dict[str, str] = {
+    "sklearn_logreg": "Logistic regression",
+    "sklearn_random_forest": "Random forest",
+    "sklearn_hist_gradient_boosting": "Hist gradient boosting",
+    "pytorch_mlp": "PyTorch MLP",
+}
+SUPPORTED_MODEL_KINDS: tuple[str, ...] = tuple(MODEL_KIND_LABELS)
+MODEL_KIND_OPTIONS: tuple[tuple[str, str], ...] = tuple(
+    (label, kind) for kind, label in MODEL_KIND_LABELS.items()
+)
+MODEL_DEVICE_OPTIONS: tuple[str, ...] = ("auto", "cpu", "cuda")
 DEFAULT_MODEL_PARAMS: dict[str, dict[str, Any]] = {
     "sklearn_logreg": {
         "c": 1.0,
