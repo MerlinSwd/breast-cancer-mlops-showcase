@@ -15,7 +15,17 @@ from rich.text import Text
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.widgets import Footer, Header, Input, Label, ListItem, ListView, Static
+from textual.widgets import (
+    Button,
+    Footer,
+    Header,
+    Input,
+    Label,
+    ListItem,
+    ListView,
+    Select,
+    Static,
+)
 
 RunMode = Literal["runs", "configs"]
 RunDetailMode = Literal["run", "artifacts", "actions", "compare", "help"]
@@ -57,6 +67,30 @@ ARTIFACT_KEYS = (
     "config",
     "fold_metrics",
     "feature_importance",
+)
+MODE_OPTIONS: tuple[tuple[str, RunMode], ...] = (
+    ("Runs", "runs"),
+    ("Configs", "configs"),
+)
+SORT_OPTIONS: tuple[tuple[str, str], ...] = (
+    ("F1", "f1"),
+    ("Accuracy", "accuracy"),
+    ("ROC AUC", "roc_auc"),
+    ("Run name", "run_name"),
+    ("Issue count", "issue_count"),
+    ("Timestamp", "timestamp"),
+    ("Model kind", "model_kind"),
+    ("Evaluation", "evaluation_mode"),
+    ("CV F1 σ", "cv_f1_std"),
+)
+HEALTH_FILTER_OPTIONS: tuple[tuple[str, HealthFilter], ...] = (
+    ("All runs", "all"),
+    ("Unhealthy only", "unhealthy_only"),
+    ("Missing cards", "card_missing"),
+    ("Missing models", "model_missing"),
+    ("Missing metrics", "metrics_missing"),
+    ("Registry drift", "registry_drift"),
+    ("CV only", "cv_only"),
 )
 
 
@@ -151,6 +185,33 @@ class MerlinDashboardApp(App[None]):
 
     #run-filter {
         margin: 1 1 0 1;
+    }
+
+    #control-bar {
+        height: auto;
+        margin: 0 1;
+    }
+
+    .control-group {
+        width: 1fr;
+        height: auto;
+        border: round rgb(59, 130, 246);
+        padding: 0 1 1 1;
+        margin-right: 1;
+    }
+
+    .control-group.-last {
+        margin-right: 0;
+    }
+
+    .menu-select {
+        margin-bottom: 1;
+    }
+
+    .toolbar-button {
+        margin-right: 1;
+        margin-bottom: 1;
+        min-width: 12;
     }
 
     #main-grid {
@@ -260,12 +321,51 @@ class MerlinDashboardApp(App[None]):
             output="Press a/v/m/p/t inside a run to operate from the command deck.",
         )
         self._is_refreshing_list = False
+        self._is_syncing_controls = False
         self._prior_detail_mode: RunDetailMode = "run"
 
     def compose(self) -> ComposeResult:
         yield Header(show_clock=False)
         yield Static(render_merlin_logo(), id="logo")
         yield Input(placeholder="Filter runs or configs...", id="run-filter")
+        with Horizontal(id="control-bar"):
+            with Vertical(classes="control-group"):
+                yield Static("Menus", classes="section-title")
+                yield Select(
+                    MODE_OPTIONS,
+                    value=self.mode,
+                    allow_blank=False,
+                    id="mode-select",
+                    classes="menu-select",
+                )
+                yield Select(
+                    SORT_OPTIONS,
+                    value=self.sort_key,
+                    allow_blank=False,
+                    id="sort-select",
+                    classes="menu-select",
+                )
+                yield Select(
+                    HEALTH_FILTER_OPTIONS,
+                    value=self.health_filter,
+                    allow_blank=False,
+                    id="health-select",
+                    classes="menu-select",
+                )
+            with Vertical(classes="control-group"):
+                yield Static("Navigation", classes="section-title")
+                with Horizontal():
+                    yield Button("Reload", id="reload-button", classes="toolbar-button")
+                    yield Button("Actions", id="actions-button", classes="toolbar-button")
+                    yield Button("Compare", id="compare-button", classes="toolbar-button")
+                    yield Button("Help", id="help-button", classes="toolbar-button")
+            with Vertical(classes="control-group -last"):
+                yield Static("Run Actions", classes="section-title")
+                with Horizontal():
+                    yield Button("Validate", id="validate-button", classes="toolbar-button")
+                    yield Button("Report", id="report-button", classes="toolbar-button")
+                    yield Button("Predict", id="predict-button", classes="toolbar-button")
+                    yield Button("Retrain", id="retrain-button", classes="toolbar-button")
         with Horizontal(id="main-grid"):
             with Vertical(id="sidebar"):
                 yield Static("Tracked Items", classes="section-title")
@@ -283,6 +383,7 @@ class MerlinDashboardApp(App[None]):
 
     def on_mount(self) -> None:
         self._refresh_view(query="")
+        self._refresh_controls()
         self.query_one("#run-list", ListView).focus()
         self._refresh_status("Ready. / filter • tab mode • enter detail • a actions • ? help.")
         self._refresh_task_status()
@@ -291,30 +392,23 @@ class MerlinDashboardApp(App[None]):
         self.query_one("#run-filter", Input).focus()
 
     def action_switch_mode(self) -> None:
-        self.mode = "configs" if self.mode == "runs" else "runs"
-        self.detail_mode = "run"
-        self._refresh_view(query=self._current_query())
-        self._refresh_status("Switched workspace lane.")
+        self._set_mode("configs" if self.mode == "runs" else "runs")
 
     def action_cycle_sort(self) -> None:
         if self.mode != "runs":
             self._refresh_status("Sort applies to runs mode only.")
+            self._refresh_controls()
             return
         current_index = SORT_KEYS.index(self.sort_key)
-        self.sort_key = SORT_KEYS[(current_index + 1) % len(SORT_KEYS)]
-        self.selected_run_name = None
-        self._refresh_view(query=self._current_query())
-        self._refresh_status(f"Sort set to {self.sort_key}.")
+        self._set_sort_key(SORT_KEYS[(current_index + 1) % len(SORT_KEYS)])
 
     def action_toggle_health_filter(self) -> None:
         if self.mode != "runs":
             self._refresh_status("Health filters apply to runs mode only.")
+            self._refresh_controls()
             return
         current_index = HEALTH_FILTERS.index(self.health_filter)
-        self.health_filter = HEALTH_FILTERS[(current_index + 1) % len(HEALTH_FILTERS)]
-        self.selected_run_name = None
-        self._refresh_view(query=self._current_query())
-        self._refresh_status(f"Health filter set to {_health_filter_label(self.health_filter)}.")
+        self._set_health_filter(HEALTH_FILTERS[(current_index + 1) % len(HEALTH_FILTERS)])
 
     def action_reload(self) -> None:
         self.summary = load_dashboard_summary(
@@ -411,6 +505,41 @@ class MerlinDashboardApp(App[None]):
             return
         self._sync_selected_from_list()
 
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        button_id = event.button.id
+        if button_id == "reload-button":
+            self.action_reload()
+        elif button_id == "actions-button":
+            self.action_show_actions()
+        elif button_id == "compare-button":
+            self.action_compare_selected_run()
+        elif button_id == "help-button":
+            self.action_toggle_help()
+        elif button_id == "validate-button":
+            self.action_validate_selected_run()
+        elif button_id == "report-button":
+            self.action_report_selected_run()
+        elif button_id == "predict-button":
+            self.action_predict_selected_run()
+        elif button_id == "retrain-button":
+            self.action_retrain_selected_run()
+
+    def on_select_changed(self, event: Select.Changed) -> None:
+        if self._is_syncing_controls or event.select.id is None:
+            return
+        value = event.value
+        if value == Select.BLANK:
+            return
+        if event.select.id == "mode-select":
+            self._set_mode(value)
+            return
+        if event.select.id == "sort-select":
+            self._set_sort_key(str(value))
+            return
+        if event.select.id == "health-select":
+            self._set_health_filter(value)
+            return
+
     def _execute_selected_action(self, action: str) -> None:
         if self.mode != "runs":
             self._refresh_status("Operator actions only run in runs mode.")
@@ -434,6 +563,50 @@ class MerlinDashboardApp(App[None]):
     def _current_query(self) -> str:
         return self.query_one("#run-filter", Input).value
 
+    def _refresh_controls(self) -> None:
+        self._is_syncing_controls = True
+        self.query_one("#mode-select", Select).value = self.mode
+        self.query_one("#sort-select", Select).value = self.sort_key
+        self.query_one("#health-select", Select).value = self.health_filter
+        self._is_syncing_controls = False
+
+    def _set_mode(self, mode: RunMode) -> None:
+        if mode == self.mode:
+            self._refresh_controls()
+            return
+        self.mode = mode
+        self.detail_mode = "run"
+        self._refresh_view(query=self._current_query())
+        self._refresh_status("Switched workspace lane.")
+
+    def _set_sort_key(self, sort_key: str) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Sort applies to runs mode only.")
+            self._refresh_controls()
+            return
+        if sort_key == self.sort_key:
+            self._refresh_controls()
+            return
+        self.sort_key = sort_key
+        self.selected_run_name = None
+        self._refresh_view(query=self._current_query())
+        self._refresh_status(f"Sort set to {self.sort_key}.")
+
+    def _set_health_filter(self, health_filter: HealthFilter) -> None:
+        if self.mode != "runs":
+            self._refresh_status("Health filters apply to runs mode only.")
+            self._refresh_controls()
+            return
+        if health_filter == self.health_filter:
+            self._refresh_controls()
+            return
+        self.health_filter = health_filter
+        self.selected_run_name = None
+        self._refresh_view(query=self._current_query())
+        self._refresh_status(
+            f"Health filter set to {_health_filter_label(self.health_filter)}."
+        )
+
     def _current_visible_runs(self) -> list[DashboardRunView]:
         return select_run_views(
             self.summary,
@@ -451,6 +624,7 @@ class MerlinDashboardApp(App[None]):
         self._refresh_details()
         self._refresh_overview()
         self._refresh_task_status()
+        self._refresh_controls()
 
     def _refresh_list(self, query: str) -> None:
         run_list = self.query_one("#run-list", ListView)
@@ -1106,6 +1280,10 @@ def build_action_catalog_text(selected_run_name: str | None) -> str:
             "Action Catalog",
             f"Selected run: {run_name}",
             "",
+            "Toolbar:",
+            "- Buttons for Reload, Actions, Compare, Help, Validate, Report, Predict, and Retrain",
+            "- Menus for Mode, Sort, and Health filter at the top of the deck",
+            "",
             "Hotkeys:",
             "- v → validate selected run against configs/quality_gates.yaml",
             "- m → generate MODEL_CARD.md for the selected run",
@@ -1123,6 +1301,12 @@ def build_help_text() -> str:
     return "\n".join(
         [
             "Keyboard Help",
+            "Toolbar and menus:",
+            "- top menus switch mode, sort order, and triage filter without memorizing hotkeys",
+            "- top buttons trigger reload, actions, compare, help, validate, report,",
+            "  predict, and retrain",
+            "",
+            "Hotkeys:",
             "- / focus filter",
             "- s cycle sort",
             "- h cycle triage filter",

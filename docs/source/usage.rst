@@ -93,7 +93,9 @@ MLflow identifiers, and artifact-path health, cross-validation stability
 summaries, and a detail pane with metric deltas versus the champion.
 
 It also exposes executable in-TUI operator actions for ``validate``,
-``report``, ``predict``, and ``retrain``; a task-status pane with
+``report``, ``predict``, and ``retrain``; a menu-driven control bar for mode,
+sort order, and health triage; clickable toolbar buttons for reload, actions,
+compare, help, and run-level operations; a task-status pane with
 success/failure feedback and action output previews; artifact drill-down for
 ``metrics.json``, ``metadata.json``, ``MODEL_CARD.md``,
 ``config.resolved.yaml``, ``fold_metrics.json``, and

@@ -628,3 +628,79 @@ def test_interactive_dashboard_app_supports_mode_switch_compare_and_help(tmp_pat
             assert "Keyboard Help" in str(details.render())
 
     asyncio.run(scenario())
+
+
+def test_interactive_dashboard_app_supports_toolbar_buttons_and_select_menus(
+    tmp_path: Path, monkeypatch
+) -> None:
+    from textual.widgets import Button, ListView, Select, Static
+
+    from bc_mlops_showcase.tui import MerlinDashboardApp
+
+    registry_path, run_root = _seed_registry(tmp_path)
+    config_root = tmp_path / "configs"
+    config_root.mkdir(parents=True)
+    (config_root / "train-demo.yaml").write_text(
+        "experiment_name: demo-run\n"
+        "model:\n"
+        "  kind: sklearn_logreg\n"
+        "dataset:\n"
+        "  kind: sklearn_breast_cancer\n"
+    )
+
+    calls: list[str] = []
+
+    def fake_execute_selected_action(self: object, action: str) -> None:
+        calls.append(action)
+
+    monkeypatch.setattr(
+        "bc_mlops_showcase.tui.MerlinDashboardApp._execute_selected_action",
+        fake_execute_selected_action,
+    )
+
+    async def scenario() -> None:
+        app = MerlinDashboardApp(
+            registry_path=registry_path,
+            run_root=run_root,
+            config_root=config_root,
+        )
+        async with app.run_test() as pilot:
+            run_list = app.query_one("#run-list", ListView)
+            details = app.query_one("#run-details", Static)
+            status = app.query_one("#status-bar", Static)
+            mode_select = app.query_one("#mode-select", Select)
+            sort_select = app.query_one("#sort-select", Select)
+            health_select = app.query_one("#health-select", Select)
+
+            assert app.query_one("#reload-button", Button).label.plain == "Reload"
+            assert app.query_one("#actions-button", Button).label.plain == "Actions"
+            assert app.query_one("#validate-button", Button).label.plain == "Validate"
+
+            mode_select.value = "configs"
+            await pilot.pause()
+            assert run_list.children[0].name == "train-demo"
+            assert "Mode: configs" in str(status.render())
+
+            mode_select.value = "runs"
+            await pilot.pause()
+            sort_select.value = "accuracy"
+            await pilot.pause()
+            assert run_list.children[0].name == "hi-acc-xgb-20260607T121000Z"
+
+            health_select.value = "card_missing"
+            await pilot.pause()
+            await pilot.pause()
+            assert run_list.children[0].name == "pytorch-mlp-20260607T120500Z"
+            assert "Health filter: missing model cards" in str(
+                details.app.query_one("#overview", Static).render()
+            )
+
+            app.query_one("#actions-button", Button).press()
+            await pilot.pause()
+            assert "Action Catalog" in str(details.render())
+
+            app.query_one("#validate-button", Button).press()
+            await pilot.pause()
+            assert calls == ["validate"]
+
+    asyncio.run(scenario())
