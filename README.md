@@ -110,6 +110,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 - the current champion run
 - a metric leaderboard across tracked runs
 - artifact health checks for model files, metrics, and model cards
+- registry-versus-disk drift, including orphan run directories and stale registry entries
 - operator hints for the next useful command
 
 The interactive deck adds:

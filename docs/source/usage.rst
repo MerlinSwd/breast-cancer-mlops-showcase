@@ -74,8 +74,9 @@ Open the interactive command deck
      --interactive
 
 The dashboard highlights the current champion run, prints a sorted leaderboard,
-checks whether each run directory still contains the expected artifacts, and
-points the operator at the next command worth running.
+checks whether each run directory still contains the expected artifacts, surfaces
+registry-versus-disk drift such as orphan run directories or stale registry
+entries, and points the operator at the next command worth running.
 
 The interactive deck adds live filtering by run name or model kind, keyboard
 navigation through the run list, an overview pane for deck health and sort

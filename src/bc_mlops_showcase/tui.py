@@ -40,6 +40,8 @@ class DashboardSummary:
     runs: list[dict[str, object]]
     best_run: dict[str, object] | None
     artifact_statuses: list[RunArtifactStatus]
+    orphan_run_dirs: list[str]
+    missing_run_dirs: list[str]
 
 
 @dataclass(slots=True)
@@ -381,7 +383,22 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
             best_run,
         )
 
-    return DashboardSummary(runs=runs, best_run=best_run, artifact_statuses=artifact_statuses)
+    disk_run_dirs = (
+        sorted(path.name for path in run_root.iterdir() if path.is_dir())
+        if run_root.exists()
+        else []
+    )
+    registry_run_names = sorted(str(run["run_name"]) for run in runs)
+    registry_run_name_set = set(registry_run_names)
+    disk_run_dir_set = set(disk_run_dirs)
+
+    return DashboardSummary(
+        runs=runs,
+        best_run=best_run,
+        artifact_statuses=artifact_statuses,
+        orphan_run_dirs=sorted(disk_run_dir_set - registry_run_name_set),
+        missing_run_dirs=sorted(registry_run_name_set - disk_run_dir_set),
+    )
 
 
 def render_merlin_logo() -> str:
@@ -502,6 +519,8 @@ def build_overview_text(
             f"Visible runs: {len(visible_runs)}",
             f"Champion: {champion_name}",
             f"Runs with artifact issues: {unhealthy_count}",
+            f"Orphan run dirs: {len(summary.orphan_run_dirs)}",
+            f"Registry entries without run dirs: {len(summary.missing_run_dirs)}",
             f"Sort: {sort_key}",
             f"Health filter: {filter_state}",
             f"Search: {search_text}",
@@ -705,6 +724,7 @@ def _build_dashboard(summary: DashboardSummary, registry_path: Path, run_root: P
         _summary_panel(summary),
         _leaderboard_panel(summary),
         _artifact_health_panel(summary),
+        _registry_drift_panel(summary),
         _operator_hints_panel(summary, registry_path=registry_path, run_root=run_root),
     )
 
@@ -793,6 +813,19 @@ def _artifact_health_panel(summary: DashboardSummary) -> Panel:
     return Panel(table, border_style="red", title="Artifact Health")
 
 
+def _registry_drift_panel(summary: DashboardSummary) -> Panel:
+    orphan_runs = ", ".join(summary.orphan_run_dirs) if summary.orphan_run_dirs else "none"
+    missing_runs = ", ".join(summary.missing_run_dirs) if summary.missing_run_dirs else "none"
+    drift = Group(
+        Text(f"Orphan run dirs: {len(summary.orphan_run_dirs)}"),
+        Text(orphan_runs),
+        Text(""),
+        Text(f"Registry entries without run dirs: {len(summary.missing_run_dirs)}"),
+        Text(missing_runs),
+    )
+    return Panel(drift, border_style="yellow", title="Registry / Disk Drift")
+
+
 def _operator_hints_panel(summary: DashboardSummary, registry_path: Path, run_root: Path) -> Panel:
     if not summary.runs:
         hints = Group(
@@ -810,6 +843,8 @@ def _operator_hints_panel(summary: DashboardSummary, registry_path: Path, run_ro
         Text(f"Run root: {run_root}"),
         Text(f"Runs missing model cards: {missing_cards}"),
         Text(f"Runs with any artifact issue: {unhealthy_runs}"),
+        Text(f"Orphan run dirs: {len(summary.orphan_run_dirs)}"),
+        Text(f"Registry entries without run dirs: {len(summary.missing_run_dirs)}"),
         Text("Next move: bc-mlops report --run-dir <run_dir> --output <run_dir>/MODEL_CARD.md"),
         Text("Interactive mode: bc-mlops dashboard --interactive"),
     )
