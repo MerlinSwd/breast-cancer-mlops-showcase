@@ -689,8 +689,17 @@ def _build_delta_line(best_run: dict[str, object] | None, current_run: dict[str,
     if best_run is None:
         return "Delta vs champion (F1): n/a"
 
+    return f"Delta vs champion (F1): {_format_delta_vs_champion(best_run, current_run)}"
+
+
+def _format_delta_vs_champion(
+    best_run: dict[str, object] | None, current_run: dict[str, object]
+) -> str:
+    if best_run is None:
+        return "n/a"
+
     delta = _metric_value(current_run, "f1") - _metric_value(best_run, "f1")
-    return f"Delta vs champion (F1): {delta:+.4f}"
+    return f"{delta:+.4f}"
 
 
 def _format_metric(run: dict[str, object], key: str) -> str:
@@ -728,6 +737,7 @@ def _build_dashboard(summary: DashboardSummary, registry_path: Path, run_root: P
         _brand_panel(),
         _summary_panel(summary),
         _leaderboard_panel(summary),
+        _comparison_panel(summary),
         _artifact_health_panel(summary),
         _registry_drift_panel(summary),
         _operator_hints_panel(summary, registry_path=registry_path, run_root=run_root),
@@ -793,6 +803,40 @@ def _leaderboard_panel(summary: DashboardSummary) -> Panel:
         table.add_row("—", "—", "—", "—", "—", "—")
 
     return Panel(table, border_style="blue", title="Leaderboard")
+
+
+def _comparison_panel(summary: DashboardSummary) -> Panel:
+    table = Table(expand=True)
+    table.add_column("Rank", justify="right", no_wrap=True)
+    table.add_column("Run")
+    table.add_column("Model", no_wrap=True)
+    table.add_column("F1", justify="right", no_wrap=True)
+    table.add_column("ΔF1 vs champ", justify="right", no_wrap=True)
+
+    run_views = select_run_views(
+        summary,
+        query="",
+        sort_key=DEFAULT_SORT_KEY,
+        unhealthy_only=False,
+    )
+    run_by_name = {str(run["run_name"]): run for run in summary.runs}
+
+    for index, run_view in enumerate(run_views, start=1):
+        run = run_by_name.get(run_view.run_name)
+        if run is None:
+            continue
+        table.add_row(
+            str(index),
+            run_view.run_name,
+            run_view.model_kind,
+            run_view.f1,
+            _format_delta_vs_champion(summary.best_run, run),
+        )
+
+    if not run_views:
+        table.add_row("—", "—", "—", "—", "—")
+
+    return Panel(table, border_style="magenta", title="Compare View")
 
 
 def _artifact_health_panel(summary: DashboardSummary) -> Panel:
