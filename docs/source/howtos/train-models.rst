@@ -42,6 +42,7 @@ Compare all recorded runs
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
+   uv run bc-mlops compare --registry artifacts/registry.json --summary
 
 Validate the latest run
 -----------------------
@@ -68,4 +69,6 @@ The dashboard and interactive command deck now surface ready-to-run operator com
 artifact health, champion selection, and the evaluation mode that produced a highlighted run.
 For stratified k-fold runs they also surface cross-validation stability directly from
 ``fold_metrics.json`` so operators can compare per-run ``F1 σ`` values and dossier-level
-mean/std summaries without opening the raw JSON by hand.
+mean/std summaries without opening the raw JSON by hand. When you only need a quick terminal
+leaderboard, ``bc-mlops compare --summary`` prints rank, evaluation mode, champion deltas,
+and k-fold stability from the registry without launching the full dashboard.

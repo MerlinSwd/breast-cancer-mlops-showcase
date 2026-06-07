@@ -6,6 +6,7 @@ import argparse
 import json
 from collections.abc import Sequence
 from pathlib import Path
+from typing import Any
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -20,6 +21,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     compare_parser = subparsers.add_parser("compare", help="Print experiment registry summary")
     compare_parser.add_argument("--registry", type=Path, default=Path("artifacts/registry.json"))
+    compare_parser.add_argument(
+        "--summary",
+        action="store_true",
+        help="Render a human-readable comparison view instead of raw registry JSON",
+    )
 
     dashboard_parser = subparsers.add_parser(
         "dashboard",
@@ -57,6 +63,104 @@ def _print_registry(registry_path: Path) -> int:
     return 0
 
 
+def _load_registry_payload(registry_path: Path) -> dict[str, Any]:
+    if not registry_path.exists():
+        return {"runs": []}
+    try:
+        payload = json.loads(registry_path.read_text())
+    except json.JSONDecodeError:
+        return {"runs": []}
+    return payload if isinstance(payload, dict) else {"runs": []}
+
+
+def _normalize_runs(candidates: object) -> list[dict[str, Any]]:
+    if not isinstance(candidates, list):
+        return []
+    return [dict(candidate) for candidate in candidates if isinstance(candidate, dict)]
+
+
+def _metric_value(run: dict[str, Any], key: str, default: float = -1.0) -> float:
+    value = run.get(key)
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def _format_metric(run: dict[str, Any], key: str) -> str:
+    value = run.get(key)
+    try:
+        return f"{float(value):.4f}"
+    except (TypeError, ValueError):
+        return "n/a"
+
+
+def _format_delta(best_run: dict[str, Any] | None, current_run: dict[str, Any]) -> str:
+    if best_run is None:
+        return "n/a"
+    delta = _metric_value(current_run, "f1") - _metric_value(best_run, "f1")
+    return f"{delta:+.4f}"
+
+
+def _format_evaluation_mode(run: dict[str, Any]) -> str:
+    mode = run.get("evaluation_mode")
+    if not mode:
+        return "n/a"
+    if str(mode) != "stratified_k_fold":
+        return str(mode)
+    try:
+        folds = int(run.get("evaluation_folds"))
+    except (TypeError, ValueError):
+        return str(mode)
+    return f"{mode} ({folds} folds)"
+
+
+def _render_compare_summary(registry_path: Path) -> str:
+    payload = _load_registry_payload(registry_path)
+    runs = _normalize_runs(payload.get("runs", []))
+    best_run_raw = payload.get("best_run")
+    best_run = dict(best_run_raw) if isinstance(best_run_raw, dict) else None
+    if best_run is None and runs:
+        best_run = max(
+            runs, key=lambda run: (_metric_value(run, "f1"), _metric_value(run, "roc_auc"))
+        )
+
+    lines = ["Compare Summary", f"Registry: {registry_path}"]
+    champion_name = str(best_run.get("run_name", "n/a")) if best_run is not None else "n/a"
+    lines.append(f"Champion: {champion_name}")
+    lines.append("")
+    lines.append("Rank | Run | Model | Evaluation | F1 | ΔF1 vs champ | F1 σ")
+
+    ordered_runs = sorted(
+        runs,
+        key=lambda run: (
+            _metric_value(run, "f1"),
+            _metric_value(run, "roc_auc"),
+            str(run.get("run_name", "")),
+        ),
+        reverse=True,
+    )
+    for index, run in enumerate(ordered_runs, start=1):
+        lines.append(
+            " | ".join(
+                [
+                    str(index),
+                    str(run.get("run_name", "unknown")),
+                    str(run.get("model_kind", "unknown")),
+                    _format_evaluation_mode(run),
+                    _format_metric(run, "f1"),
+                    _format_delta(best_run, run),
+                    _format_metric(run, "cv_f1_std"),
+                ]
+            )
+        )
+
+    if not ordered_runs:
+        lines.append("— | — | — | — | — | — | —")
+
+    return "\n".join(lines) + "\n"
+
+
 def main(argv: Sequence[str] | None = None) -> int:
     """Run the CLI entrypoint and return an exit code."""
 
@@ -73,6 +177,9 @@ def main(argv: Sequence[str] | None = None) -> int:
         return 0
 
     if args.command == "compare":
+        if args.summary:
+            print(_render_compare_summary(args.registry), end="")
+            return 0
         return _print_registry(args.registry)
 
     if args.command == "dashboard":

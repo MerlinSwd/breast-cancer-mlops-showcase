@@ -13,7 +13,7 @@ The package exposes a single CLI entrypoint named ``bc-mlops``.
 Available subcommands:
 
 - ``train``: train a configured backend and write run artifacts
-- ``compare``: inspect the lightweight experiment registry
+- ``compare``: inspect the lightweight experiment registry or print a quick text leaderboard
 - ``dashboard``: render a branded terminal dashboard for run metrics and artifact health
 - ``validate``: enforce quality gates against a metrics file
 - ``predict``: score JSON or CSV payloads against a trained artifact
@@ -60,6 +60,7 @@ Compare runs
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
+   uv run bc-mlops compare --registry artifacts/registry.json --summary
 
 Open the terminal dashboard
 ---------------------------

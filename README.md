@@ -72,6 +72,7 @@ uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfol
 
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
+uv run bc-mlops compare --registry artifacts/registry.json --summary
 uv run bc-mlops dashboard --registry artifacts/registry.json --run-root artifacts/runs
 ```
 
@@ -87,6 +88,7 @@ uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 
 ```bash
 uv run bc-mlops compare --registry artifacts/registry.json
+uv run bc-mlops compare --registry artifacts/registry.json --summary
 ```
 
 ### Open the branded terminal dashboard
@@ -114,6 +116,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 - artifact health checks for model files, metrics, and model cards
 - fold-level cross-validation summaries for stratified k-fold Coimbra runs via `fold_metrics.json`
 - compare-view stability signals, including per-run cross-validation F1 dispersion (`F1 σ`) in the dashboard and dossier
+- a lightweight `bc-mlops compare --summary` leaderboard for rank, evaluation mode, champion deltas, and k-fold stability without opening the full dashboard
 - registry-versus-disk drift, including orphan run directories and stale registry entries
 - operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
 
