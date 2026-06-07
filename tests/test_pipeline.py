@@ -100,3 +100,10 @@ model:
     assert metadata["evaluation"]["folds"] == 5
     assert metadata["train_rows"] == 116
     assert metadata["test_rows"] == 116
+    fold_metrics = json.loads((result.run_dir / "fold_metrics.json").read_text())
+    assert fold_metrics["evaluation_mode"] == "stratified_k_fold"
+    assert len(fold_metrics["folds"]) == 5
+    assert fold_metrics["folds"][0]["fold"] == 1
+    assert fold_metrics["folds"][0]["train_rows"] > fold_metrics["folds"][0]["test_rows"]
+    assert fold_metrics["summary"]["f1"]["mean"] >= 0.55
+    assert fold_metrics["summary"]["f1"]["std"] >= 0.0

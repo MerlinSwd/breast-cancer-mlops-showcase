@@ -131,6 +131,7 @@ Each training run creates a timestamped directory containing:
 - the serialized model artifact
 - ``metrics.json``
 - ``metadata.json``
+- optional ``fold_metrics.json`` with per-fold metrics plus mean/std summaries for stratified k-fold evaluation
 - ``config.resolved.yaml``
 - optional ``feature_importance.csv``
 - generated ``MODEL_CARD.md`` when requested

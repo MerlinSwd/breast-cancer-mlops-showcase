@@ -112,6 +112,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 - a metric leaderboard across tracked runs
 - evaluation strategy visibility for tracked runs, including stratified k-fold champion summaries
 - artifact health checks for model files, metrics, and model cards
+- fold-level cross-validation summaries for stratified k-fold Coimbra runs via `fold_metrics.json`
 - registry-versus-disk drift, including orphan run directories and stale registry entries
 - operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
 
@@ -153,6 +154,10 @@ uv run bc-mlops report \
   --run-dir artifacts/runs/<run-name> \
   --output artifacts/runs/<run-name>/MODEL_CARD.md
 ```
+
+For stratified k-fold runs, the generated model card now includes a compact
+cross-validation summary sourced from `fold_metrics.json` so operators can see
+mean ± std for F1 and ROC AUC without opening raw JSON artifacts.
 
 ## Configuration model
 

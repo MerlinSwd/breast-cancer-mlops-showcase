@@ -46,6 +46,23 @@ def _positive_predictions(probabilities: pd.Series, threshold: float) -> pd.Seri
     return (probabilities >= threshold).astype(int)
 
 
+def _calculate_metrics(
+    probabilities: pd.Series,
+    target: pd.Series,
+    *,
+    threshold: float,
+) -> dict[str, float]:
+    predictions = _positive_predictions(probabilities, threshold)
+    return {
+        "accuracy": round(float(accuracy_score(target, predictions)), 4),
+        "precision": round(float(precision_score(target, predictions)), 4),
+        "recall": round(float(recall_score(target, predictions)), 4),
+        "f1": round(float(f1_score(target, predictions)), 4),
+        "roc_auc": round(float(roc_auc_score(target, probabilities)), 4),
+        "positive_rate": round(float(predictions.mean()), 4),
+    }
+
+
 def _evaluate_holdout(
     config: TrainingConfig,
     *,
@@ -69,7 +86,7 @@ def _evaluate_stratified_k_fold(
     *,
     features: pd.DataFrame,
     target: pd.Series,
-) -> tuple[object, pd.Series, pd.Series, int, int]:
+) -> tuple[object, pd.Series, pd.Series, int, int, dict[str, object]]:
     splitter = StratifiedKFold(
         n_splits=config.evaluation.folds,
         shuffle=True,
@@ -86,6 +103,37 @@ def _evaluate_stratified_k_fold(
         cv=splitter,
         method="predict_proba",
     )[:, 1]
+
+    fold_rows: list[dict[str, float | int]] = []
+    for fold_index, (train_idx, test_idx) in enumerate(splitter.split(features, target), start=1):
+        X_train = features.iloc[train_idx]
+        X_test = features.iloc[test_idx]
+        y_train = target.iloc[train_idx]
+        y_test = target.iloc[test_idx].reset_index(drop=True)
+        fold_backend = train_backend(config=config, X_train=X_train, y_train=y_train)
+        fold_probabilities = pd.Series(fold_backend.predict_probabilities(X_test))
+        fold_metrics = _calculate_metrics(
+            fold_probabilities,
+            y_test,
+            threshold=config.threshold,
+        )
+        fold_rows.append(
+            {
+                "fold": fold_index,
+                "train_rows": len(X_train),
+                "test_rows": len(X_test),
+                **fold_metrics,
+            }
+        )
+
+    fold_frame = pd.DataFrame(fold_rows)
+    summary = {
+        metric: {
+            "mean": round(float(fold_frame[metric].mean()), 4),
+            "std": round(float(fold_frame[metric].std(ddof=0)), 4),
+        }
+        for metric in ("accuracy", "precision", "recall", "f1", "roc_auc", "positive_rate")
+    }
     backend = trained
     return (
         backend,
@@ -93,6 +141,12 @@ def _evaluate_stratified_k_fold(
         target.reset_index(drop=True),
         len(features),
         len(features),
+        {
+            "evaluation_mode": "stratified_k_fold",
+            "fold_count": config.evaluation.folds,
+            "folds": fold_rows,
+            "summary": summary,
+        },
     )
 
 
@@ -138,11 +192,19 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
     metadata_path = run_dir / "metadata.json"
     config_path = run_dir / "config.resolved.yaml"
     feature_importance_path = run_dir / "feature_importance.csv"
+    fold_metrics_path = run_dir / "fold_metrics.json"
 
     tracking = start_training_run(config)
     try:
         if config.evaluation.mode == "stratified_k_fold":
-            backend, probabilities, y_test, train_rows, test_rows = _evaluate_stratified_k_fold(
+            (
+                backend,
+                probabilities,
+                y_test,
+                train_rows,
+                test_rows,
+                fold_metrics,
+            ) = _evaluate_stratified_k_fold(
                 config,
                 features=dataset.features,
                 target=dataset.target,
@@ -153,20 +215,15 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
                 features=dataset.features,
                 target=dataset.target,
             )
-        predictions = _positive_predictions(probabilities, config.threshold)
+            fold_metrics = None
 
-        metrics = {
-            "accuracy": round(float(accuracy_score(y_test, predictions)), 4),
-            "precision": round(float(precision_score(y_test, predictions)), 4),
-            "recall": round(float(recall_score(y_test, predictions)), 4),
-            "f1": round(float(f1_score(y_test, predictions)), 4),
-            "roc_auc": round(float(roc_auc_score(y_test, probabilities)), 4),
-            "positive_rate": round(float(predictions.mean()), 4),
-        }
+        metrics = _calculate_metrics(probabilities, y_test, threshold=config.threshold)
 
         model_path = run_dir / backend.artifact_filename
         backend.save(model_path)
         metrics_path.write_text(json.dumps(metrics, indent=2))
+        if fold_metrics is not None:
+            fold_metrics_path.write_text(json.dumps(fold_metrics, indent=2))
         if backend.feature_importance is not None:
             backend.feature_importance.to_csv(feature_importance_path, index=False)
 
