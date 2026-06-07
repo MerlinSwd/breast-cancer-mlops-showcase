@@ -64,4 +64,4 @@ Review these files in the run directory:
 
 The dashboard and interactive command deck now surface ready-to-run operator commands for
 ``bc-mlops validate`` and ``bc-mlops report`` so the next verification step is visible next to
-artifact health and champion selection.
+artifact health, champion selection, and the evaluation mode that produced a highlighted run.

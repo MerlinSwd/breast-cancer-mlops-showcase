@@ -347,6 +347,8 @@ def load_dashboard_summary(registry_path: Path, run_root: Path) -> DashboardSumm
             "experiment_name",
             "train_rows",
             "test_rows",
+            "evaluation_mode",
+            "evaluation_folds",
             "dataset_kind",
             "dataset_path",
             "target_column",
@@ -555,6 +557,7 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
     test_rows = run.get("test_rows", "n/a")
     runtime_framework = str(run.get("runtime_framework", "unknown"))
     runtime_device = str(run.get("runtime_device", "unknown"))
+    evaluation_strategy = _format_evaluation_strategy(run)
     mlflow_run_id = str(run.get("mlflow_run_id", "n/a"))
     mlflow_tracking_uri = str(run.get("mlflow_tracking_uri", "n/a"))
     dataset_kind = str(run.get("dataset_kind", "unknown"))
@@ -576,6 +579,7 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
             "Run dossier:",
             f"- Timestamp: {timestamp}",
             f"- Rows: train={train_rows} test={test_rows}",
+            f"- Evaluation: {evaluation_strategy}",
             f"- Runtime: {runtime_framework} on {runtime_device}",
             f"- MLflow run id: {mlflow_run_id}",
             f"- Tracking URI: {mlflow_tracking_uri}",
@@ -616,6 +620,9 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
     model = payload.get("model", {}) if isinstance(payload.get("model", {}), dict) else {}
     runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
     dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
+    evaluation = (
+        payload.get("evaluation", {}) if isinstance(payload.get("evaluation", {}), dict) else {}
+    )
     mlflow = payload.get("mlflow", {}) if isinstance(payload.get("mlflow", {}), dict) else {}
     return {
         "model_artifact": str(model.get("artifact", "model artifact")),
@@ -624,6 +631,8 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
         "experiment_name": payload.get("experiment_name"),
         "train_rows": payload.get("train_rows"),
         "test_rows": payload.get("test_rows"),
+        "evaluation_mode": evaluation.get("mode"),
+        "evaluation_folds": evaluation.get("folds"),
         "dataset_kind": dataset.get("kind"),
         "dataset_path": dataset.get("path"),
         "target_column": dataset.get("target_column"),
@@ -692,6 +701,21 @@ def _build_delta_line(best_run: dict[str, object] | None, current_run: dict[str,
         return "Delta vs champion (F1): n/a"
 
     return f"Delta vs champion (F1): {_format_delta_vs_champion(best_run, current_run)}"
+
+
+def _format_evaluation_strategy(run: dict[str, object]) -> str:
+    mode = run.get("evaluation_mode")
+    if not mode:
+        return "n/a"
+
+    try:
+        folds = int(run.get("evaluation_folds"))
+    except (TypeError, ValueError):
+        return str(mode)
+
+    if str(mode) != "stratified_k_fold":
+        return str(mode)
+    return f"{mode} ({folds} folds)"
 
 
 def _format_delta_vs_champion(
@@ -769,6 +793,7 @@ def _summary_panel(summary: DashboardSummary) -> Panel:
     lines = Group(
         Text(f"Champion: {best_run['run_name']}", style="bold green"),
         Text(f"Model kind: {best_run.get('model_kind', 'unknown')}"),
+        Text(f"Evaluation: {_format_evaluation_strategy(best_run)}"),
         Text(f"Accuracy: {_format_metric(best_run, 'accuracy')}"),
         Text(f"F1: {_format_metric(best_run, 'f1')}"),
         Text(f"ROC AUC: {_format_metric(best_run, 'roc_auc')}"),

@@ -30,6 +30,7 @@ def _seed_run(run_root: Path, run_name: str, *, model_artifact: str, with_model_
                 "timestamp": "20260606T155803Z",
                 "train_rows": 455,
                 "test_rows": 114,
+                "evaluation": {"mode": "stratified_k_fold", "folds": 5},
                 "dataset": {
                     "kind": "csv_tabular_binary",
                     "path": "data/breast-cancer-coimbra.csv",
@@ -102,6 +103,7 @@ def test_render_dashboard_text_surfaces_branding_and_artifact_health(tmp_path: P
     assert "MERLIN // ONCO-OPS COMMAND DECK" in output
     assert "Champion Run" in output
     assert "baseline-logreg-20260606T155802Z" in output
+    assert "Evaluation: stratified_k_fold (5 folds)" in output
     assert "Artifact Health" in output
     assert "OK" in output
     assert "sklearn_logreg" in output

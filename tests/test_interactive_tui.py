@@ -250,6 +250,24 @@ def test_build_run_detail_text_surfaces_selected_run_metrics_and_dossier(tmp_pat
     assert "--output artifacts/runs/pytorch-mlp-20260607T120500Z/MODEL_CARD.md" in detail_text
 
 
+def test_build_run_detail_text_surfaces_evaluation_strategy(tmp_path: Path) -> None:
+    from bc_mlops_showcase.tui import load_dashboard_summary
+
+    registry_path, run_root = _seed_registry(tmp_path)
+    kfold_run_dir = run_root / "baseline-logreg-20260607T120000Z"
+    metadata = json.loads((kfold_run_dir / "metadata.json").read_text())
+    metadata["evaluation"] = {"mode": "stratified_k_fold", "folds": 5}
+    (kfold_run_dir / "metadata.json").write_text(json.dumps(metadata))
+
+    summary = load_dashboard_summary(registry_path=registry_path, run_root=run_root)
+    detail_text = build_run_detail_text(
+        summary,
+        selected_run_name="baseline-logreg-20260607T120000Z",
+    )
+
+    assert "Evaluation: stratified_k_fold (5 folds)" in detail_text
+
+
 def test_build_run_detail_text_counts_multiple_artifact_issues(tmp_path: Path) -> None:
     from bc_mlops_showcase.tui import load_dashboard_summary
 

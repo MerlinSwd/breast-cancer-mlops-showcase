@@ -110,6 +110,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 
 - the current champion run
 - a metric leaderboard across tracked runs
+- evaluation strategy visibility for tracked runs, including stratified k-fold champion summaries
 - artifact health checks for model files, metrics, and model cards
 - registry-versus-disk drift, including orphan run directories and stale registry entries
 - operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
