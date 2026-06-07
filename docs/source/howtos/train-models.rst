@@ -60,3 +60,8 @@ Review these files in the run directory:
 - ``metrics.json`` for evaluation output
 - ``config.resolved.yaml`` for the fully resolved training config, including ``evaluation.mode``
 - ``feature_importance.csv`` when the backend emits feature importance
+- ``MODEL_CARD.md`` after running the dashboard-suggested ``bc-mlops report`` command
+
+The dashboard and interactive command deck now surface ready-to-run operator commands for
+``bc-mlops validate`` and ``bc-mlops report`` so the next verification step is visible next to
+artifact health and champion selection.

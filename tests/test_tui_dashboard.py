@@ -279,6 +279,57 @@ def test_render_dashboard_text_surfaces_registry_disk_drift(tmp_path: Path) -> N
     assert "missing-run" in output
 
 
+def test_render_dashboard_text_suggests_validate_and_report_commands_for_best_run(
+    tmp_path: Path,
+) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    _seed_run(
+        run_root,
+        "champion-run",
+        model_artifact="model.joblib",
+        with_model_card=False,
+    )
+
+    registry_path = tmp_path / "artifacts" / "registry.json"
+    registry_path.parent.mkdir(parents=True, exist_ok=True)
+    registry_path.write_text(
+        json.dumps(
+            {
+                "runs": [
+                    {
+                        "run_name": "champion-run",
+                        "accuracy": 0.9825,
+                        "f1": 0.9861,
+                        "roc_auc": 0.9954,
+                        "experiment_name": "baseline-logreg",
+                        "timestamp": "20260606T155803Z",
+                        "model_kind": "sklearn_logreg",
+                        "mlflow_run_id": "run-123",
+                    }
+                ],
+                "best_run": {
+                    "run_name": "champion-run",
+                    "accuracy": 0.9825,
+                    "f1": 0.9861,
+                    "roc_auc": 0.9954,
+                    "experiment_name": "baseline-logreg",
+                    "timestamp": "20260606T155803Z",
+                    "model_kind": "sklearn_logreg",
+                    "mlflow_run_id": "run-123",
+                },
+            }
+        )
+    )
+
+    output = render_dashboard_text(registry_path=registry_path, run_root=run_root, width=120)
+
+    assert "bc-mlops validate --metrics" in output
+    assert "champion-run/metrics.json" in output
+    assert "configs/quality_gates.yaml" in output
+    assert "bc-mlops report --run-dir" in output
+    assert "champion-run/MODEL_CARD.md" in output
+
+
 def test_dashboard_command_imports_without_torch_for_registry_only_usage(tmp_path: Path) -> None:
     registry_path = tmp_path / "artifacts" / "registry.json"
     registry_path.parent.mkdir(parents=True, exist_ok=True)

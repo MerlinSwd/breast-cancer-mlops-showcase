@@ -199,6 +199,14 @@ def test_build_run_detail_text_surfaces_selected_run_metrics_and_dossier(tmp_pat
     assert "config.resolved.yaml" in detail_text
     assert "feature_importance.csv" in detail_text
     assert "MODEL_CARD missing" in detail_text
+    assert "Operator actions:" in detail_text
+    assert (
+        "bc-mlops validate --metrics artifacts/runs/pytorch-mlp-20260607T120500Z/metrics.json"
+        in detail_text
+    )
+    assert "--gates configs/quality_gates.yaml" in detail_text
+    assert "bc-mlops report --run-dir artifacts/runs/pytorch-mlp-20260607T120500Z" in detail_text
+    assert "--output artifacts/runs/pytorch-mlp-20260607T120500Z/MODEL_CARD.md" in detail_text
 
 
 def test_build_run_detail_text_counts_multiple_artifact_issues(tmp_path: Path) -> None:

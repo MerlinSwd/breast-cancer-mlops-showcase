@@ -112,7 +112,7 @@ The dashboard gives you a quick terminal "bridge view" of:
 - a metric leaderboard across tracked runs
 - artifact health checks for model files, metrics, and model cards
 - registry-versus-disk drift, including orphan run directories and stale registry entries
-- operator hints for the next useful command
+- operator hints for the next useful command, including ready-to-run `validate` and `report` commands for the champion run
 
 The interactive deck adds:
 
@@ -121,6 +121,7 @@ The interactive deck adds:
 - an overview pane with champion, visible-run counts, current sort, and search state
 - a richer run dossier with timestamp, train/test rows, runtime, dataset, MLflow IDs, and artifact paths
 - a detail pane for the selected run with metric deltas vs the champion
+- ready-to-run operator actions in the selected run dossier for `validate` and `report`
 - unhealthy-only mode to isolate runs missing artifacts or model cards
 - sort cycling with `s`, health filtering with `h`, reload with `r`, filtering with `/`, and quit with `q`
 

@@ -559,6 +559,7 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
     target_column = str(run.get("target_column", "n/a"))
     model_artifact = str(run.get("model_artifact", "unknown"))
     dataset_path = str(run.get("dataset_path", "n/a"))
+    operator_actions = _operator_action_lines(selected_run_name)
     return "\n".join(
         [
             f"Run: {selected_run_name}",
@@ -588,6 +589,10 @@ def build_run_detail_text(summary: DashboardSummary, selected_run_name: str | No
             f"- {status.card_status}",
             f"- {status.config_status}",
             f"- {status.feature_importance_status}",
+            "",
+            "Operator actions:",
+            f"- {operator_actions[0]}",
+            f"- {operator_actions[1]}",
         ]
     )
 
@@ -838,6 +843,8 @@ def _operator_hints_panel(summary: DashboardSummary, registry_path: Path, run_ro
 
     missing_cards = sum("missing" in status.card_status for status in summary.artifact_statuses)
     unhealthy_runs = sum(status_has_issues(status) for status in summary.artifact_statuses)
+    best_run_name = str(summary.best_run["run_name"]) if summary.best_run is not None else None
+    operator_actions = _operator_action_lines(best_run_name)
     hints = Group(
         Text(f"Registry: {registry_path}"),
         Text(f"Run root: {run_root}"),
@@ -845,7 +852,23 @@ def _operator_hints_panel(summary: DashboardSummary, registry_path: Path, run_ro
         Text(f"Runs with any artifact issue: {unhealthy_runs}"),
         Text(f"Orphan run dirs: {len(summary.orphan_run_dirs)}"),
         Text(f"Registry entries without run dirs: {len(summary.missing_run_dirs)}"),
-        Text("Next move: bc-mlops report --run-dir <run_dir> --output <run_dir>/MODEL_CARD.md"),
+        Text(f"Validate champion: {operator_actions[0]}"),
+        Text(f"Report champion: {operator_actions[1]}"),
         Text("Interactive mode: bc-mlops dashboard --interactive"),
     )
     return Panel(hints, border_style="cyan", title="Operator Hints")
+
+
+def _operator_action_lines(run_name: str | None) -> tuple[str, str]:
+    if not run_name:
+        return (
+            "bc-mlops validate --metrics <run_dir>/metrics.json --gates configs/quality_gates.yaml",
+            "bc-mlops report --run-dir <run_dir> --output <run_dir>/MODEL_CARD.md",
+        )
+
+    run_dir = Path("artifacts/runs") / run_name
+    return (
+        "bc-mlops validate --metrics "
+        f"{run_dir / 'metrics.json'} --gates configs/quality_gates.yaml",
+        f"bc-mlops report --run-dir {run_dir} --output {run_dir / 'MODEL_CARD.md'}",
+    )
