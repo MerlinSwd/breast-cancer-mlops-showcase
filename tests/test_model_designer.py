@@ -137,10 +137,7 @@ def test_validate_model_designer_draft_rejects_invalid_device() -> None:
 def test_load_training_config_rejects_invalid_model_device(tmp_path: Path) -> None:
     path = tmp_path / "invalid-device.yaml"
     path.write_text(
-        "experiment_name: invalid-device\n"
-        "model:\n"
-        "  kind: sklearn_logreg\n"
-        "  device: tpu\n"
+        "experiment_name: invalid-device\nmodel:\n  kind: sklearn_logreg\n  device: tpu\n"
     )
 
     with pytest.raises(ValueError, match="unsupported model device"):

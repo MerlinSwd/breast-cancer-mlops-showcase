@@ -1,4 +1,5 @@
 """Inference helpers for loading payloads and scoring trained artifacts."""
+
 from __future__ import annotations
 
 import json
@@ -64,8 +65,7 @@ def predict_records(model_path: str | Path, input_path: str | Path) -> Predictio
     )
     negative_label, positive_label = _load_prediction_labels(model_path)
     labels = [
-        positive_label if probability >= 0.5 else negative_label
-        for probability in probabilities
+        positive_label if probability >= 0.5 else negative_label for probability in probabilities
     ]
 
     predictions = [

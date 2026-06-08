@@ -985,9 +985,7 @@ class MerlinDashboardApp(App[None]):
         self.query_one("#model-designer-device", Select).value = self.model_designer_draft.device
         active_fields = {
             field.name: field
-            for field in iter_model_designer_fields(
-                self.model_designer_draft.model_kind
-            )
+            for field in iter_model_designer_fields(self.model_designer_draft.model_kind)
         }
         for field in iter_all_model_designer_fields():
             widget = self.query_one(f"#{field.input_id}", Input)

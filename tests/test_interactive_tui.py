@@ -854,9 +854,9 @@ def test_interactive_dashboard_app_hydrates_model_designer_from_run_draft(tmp_pa
             await pilot.pause()
             app.query_one("#designer-device", Select).value = "cpu"
             await pilot.pause()
-            app.query_one("#designer-model-params", Input).value = (
-                '{\n  "max_depth": 6,\n  "min_samples_leaf": 2,\n  "n_estimators": 75\n}'
-            )
+            app.query_one(
+                "#designer-model-params", Input
+            ).value = '{\n  "max_depth": 6,\n  "min_samples_leaf": 2,\n  "n_estimators": 75\n}'
             await pilot.pause()
 
             app.query_one("#design-model-button", Button).press()

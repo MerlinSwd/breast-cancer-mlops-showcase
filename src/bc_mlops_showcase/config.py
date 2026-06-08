@@ -3,6 +3,7 @@
 The project keeps backend and dataset selection in configuration so that the CLI
 and pipeline stay stable while the model family or benchmark changes.
 """
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -327,9 +328,7 @@ def _parse_int_list(value: Any, *, name: str) -> list[int]:
         try:
             parsed = [int(part) for part in parts]
         except ValueError as exc:
-            raise ValueError(
-                f"{name} must be a comma-separated list of integers"
-            ) from exc
+            raise ValueError(f"{name} must be a comma-separated list of integers") from exc
     elif isinstance(value, list):
         try:
             parsed = [int(item) for item in value]
@@ -562,8 +561,7 @@ def load_training_config(path: str | Path) -> TrainingConfig:
     evaluation = _resolve_evaluation_config(raw.get("evaluation"))
     _validate_dataset_model_compatibility(dataset=dataset, model=model, evaluation=evaluation)
     experiment_name = (
-        raw.get("experiment_name")
-        or get_model_spec(model.kind).default_experiment_name
+        raw.get("experiment_name") or get_model_spec(model.kind).default_experiment_name
     )
     return TrainingConfig(
         experiment_name=experiment_name,

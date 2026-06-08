@@ -55,7 +55,6 @@ def _format_model_param_value(spec: ModelParamSpec, value: object) -> str:
     return str(value)
 
 
-
 def iter_model_designer_fields(model_kind: str) -> tuple[ModelDesignerFieldSpec, ...]:
     """Return the UI field specs for one registered model family."""
 
@@ -69,7 +68,6 @@ def iter_model_designer_fields(model_kind: str) -> tuple[ModelDesignerFieldSpec,
     )
 
 
-
 def iter_all_model_designer_fields() -> tuple[ModelDesignerFieldSpec, ...]:
     """Return the union of all model-designer fields across registered backends."""
 
@@ -80,14 +78,12 @@ def iter_all_model_designer_fields() -> tuple[ModelDesignerFieldSpec, ...]:
     return tuple(fields[name] for name in sorted(fields))
 
 
-
 def get_registered_model_kinds() -> tuple[str, ...]:
     """Return all registered model kinds in declaration order."""
 
     from .config import SUPPORTED_MODEL_KINDS
 
     return tuple(SUPPORTED_MODEL_KINDS)
-
 
 
 def build_default_model_designer_draft(
@@ -101,7 +97,6 @@ def build_default_model_designer_draft(
     return build_model_designer_draft_from_model_config(
         ModelConfig(kind=model_kind, device="auto", params=params)
     )
-
 
 
 def build_model_designer_draft_from_model_config(
@@ -125,12 +120,10 @@ def build_model_designer_draft_from_model_config(
     )
 
 
-
 def build_model_designer_draft_from_training_config(
     config: TrainingConfig, source_name: str | None = None
 ) -> ModelDesignerDraft:
     return build_model_designer_draft_from_model_config(config.model, source_name=source_name)
-
 
 
 def model_designer_draft_to_model_config(draft: ModelDesignerDraft) -> ModelConfig:
@@ -145,14 +138,12 @@ def model_designer_draft_to_model_config(draft: ModelDesignerDraft) -> ModelConf
     return ModelConfig(kind=draft.model_kind, device=device, params=params)
 
 
-
 def validate_model_designer_draft(draft: ModelDesignerDraft) -> ModelDesignerValidationResult:
     try:
         resolved = model_designer_draft_to_model_config(draft)
     except (TypeError, ValueError) as exc:
         return ModelDesignerValidationResult(ok=False, errors=[str(exc)], resolved_model=None)
     return ModelDesignerValidationResult(ok=True, errors=[], resolved_model=resolved)
-
 
 
 def render_model_designer_preview_text(draft: ModelDesignerDraft) -> str:
@@ -170,7 +161,6 @@ def render_model_designer_preview_text(draft: ModelDesignerDraft) -> str:
         sort_keys=False,
     ).strip()
     return f"Normalized model preview\n\n{preview}"
-
 
 
 def apply_model_designer_draft_to_run_draft(

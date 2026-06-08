@@ -89,9 +89,7 @@ ARTIFACT_LOADER_SPECS: dict[str, ArtifactLoaderSpec] = {
 }
 
 ARTIFACT_SUFFIX_TO_LOADER = {
-    suffix: spec.name
-    for spec in ARTIFACT_LOADER_SPECS.values()
-    for suffix in spec.suffixes
+    suffix: spec.name for spec in ARTIFACT_LOADER_SPECS.values() for suffix in spec.suffixes
 }
 
 
