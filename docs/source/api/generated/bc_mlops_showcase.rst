@@ -15,6 +15,7 @@
    data
    designer
    inference
+   kaggle
    model_designer
    modeling
    pipeline

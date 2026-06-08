@@ -65,7 +65,9 @@ Minimal config:
 CSV binary-tabular dataset
 --------------------------
 
-This loader powers the Coimbra benchmark configs.
+This loader powers the Coimbra benchmark configs. If you keep benchmark CSVs in
+Kaggle, the new ``bc-mlops kaggle pull`` command is the intended acquisition path
+before pointing ``dataset.path`` at the downloaded file.
 
 Required fields:
 

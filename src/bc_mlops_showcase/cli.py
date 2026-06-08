@@ -51,6 +51,32 @@ def build_parser() -> argparse.ArgumentParser:
     report_parser = subparsers.add_parser("report", help="Generate a markdown model card")
     report_parser.add_argument("--run-dir", type=Path, required=True)
     report_parser.add_argument("--output", type=Path, required=True)
+
+    kaggle_parser = subparsers.add_parser(
+        "kaggle", help="Pull Kaggle datasets and competition files"
+    )
+    kaggle_subparsers = kaggle_parser.add_subparsers(dest="kaggle_command", required=True)
+    kaggle_pull_parser = kaggle_subparsers.add_parser(
+        "pull", help="Download a Kaggle dataset or competition bundle"
+    )
+    kaggle_pull_parser.add_argument(
+        "--resource-type",
+        choices=("dataset", "competition"),
+        required=True,
+    )
+    kaggle_pull_parser.add_argument("--handle", required=True)
+    kaggle_pull_parser.add_argument("--output-dir", type=Path, required=True)
+    kaggle_pull_parser.add_argument("--file-name")
+    kaggle_pull_parser.add_argument(
+        "--keep-zip",
+        action="store_true",
+        help="Keep dataset archives zipped instead of auto-unzipping them",
+    )
+    kaggle_pull_parser.add_argument(
+        "--force",
+        action="store_true",
+        help="Force a re-download even if Kaggle thinks the files are already present",
+    )
     return parser
 
 
@@ -203,6 +229,20 @@ def main(argv: Sequence[str] | None = None) -> int:
         validation_result = validate_metrics(metrics_path=args.metrics, gates_path=args.gates)
         print(json.dumps(validation_result, indent=2))
         return 0 if validation_result["passed"] else 1
+
+    if args.command == "kaggle":
+        from .kaggle import pull_kaggle_resource
+
+        result = pull_kaggle_resource(
+            resource_type=args.resource_type,
+            handle=args.handle,
+            output_dir=args.output_dir,
+            file_name=args.file_name,
+            unzip=not args.keep_zip,
+            force=args.force,
+        )
+        print(json.dumps(result.summary(), indent=2))
+        return 0
 
     from .reporting import build_model_card
 

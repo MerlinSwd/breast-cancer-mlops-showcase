@@ -16,6 +16,7 @@ Available subcommands
 - ``validate``: enforce quality gates against a metrics file
 - ``predict``: score JSON or CSV payloads against a trained artifact
 - ``report``: generate a markdown model card for a completed run
+- ``kaggle pull``: download Kaggle datasets or competition files into a local directory
 
 Typical workflow
 ----------------
@@ -157,6 +158,41 @@ CSV batch input:
 
 The command prints JSON with a ``predictions`` list containing ``index``,
 ``label``, and ``probability`` fields.
+
+Pull Kaggle data
+----------------
+
+The Kaggle workflow supports both full datasets and competition downloads through
+one registry-backed command surface.
+
+Download and unzip an entire dataset:
+
+.. code-block:: bash
+
+   uv run bc-mlops kaggle pull \
+     --resource-type dataset \
+     --handle merlinswd/breast-cancer-demo \
+     --output-dir data/external/breast-cancer-demo
+
+Download a single competition file:
+
+.. code-block:: bash
+
+   uv run bc-mlops kaggle pull \
+     --resource-type competition \
+     --handle titanic \
+     --file-name train.csv \
+     --output-dir data/external/titanic
+
+Before using the command, authenticate the official Kaggle client in the shell
+running ``bc-mlops``.
+
+.. code-block:: bash
+
+   uv run kaggle auth login
+
+If you need a headless flow, the current Kaggle client also supports
+``uv run kaggle auth login --no-launch-browser``.
 
 Where to look after training
 ----------------------------
