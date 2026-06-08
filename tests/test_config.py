@@ -1,6 +1,9 @@
 from pathlib import Path
 
-from bc_mlops_showcase.config import TrainingConfig, load_training_config
+import pytest
+
+from bc_mlops_showcase.config import DatasetConfig, TrainingConfig, load_training_config
+from bc_mlops_showcase.data import load_dataset
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 COIMBRA_DATASET = REPO_ROOT / "data" / "breast-cancer-coimbra.csv"
@@ -134,3 +137,83 @@ model:
     assert config.evaluation.mode == "stratified_k_fold"
     assert config.evaluation.folds == 5
     assert config.model.kind == "sklearn_hist_gradient_boosting"
+
+
+def test_load_training_config_supports_digits_dataset_and_cnn_backend(tmp_path: Path) -> None:
+    config_path = tmp_path / "train.yaml"
+    config_path.write_text(
+        """
+experiment_name: digits-cnn
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
+dataset:
+  kind: sklearn_digits_binary
+model:
+  kind: pytorch_cnn
+  params:
+    conv_channels: [8, 16]
+    kernel_size: 3
+    epochs: 3
+    batch_size: 16
+    learning_rate: 0.005
+    hidden_dim: 32
+""".strip()
+    )
+
+    config = load_training_config(config_path)
+
+    assert config.dataset.kind == "sklearn_digits_binary"
+    assert config.model.kind == "pytorch_cnn"
+    assert config.model.params["conv_channels"] == [8, 16]
+    assert config.model.params["kernel_size"] == 3
+    assert config.model.params["hidden_dim"] == 32
+
+
+def test_load_training_config_rejects_cnn_for_non_vision_dataset(tmp_path: Path) -> None:
+    config_path = tmp_path / "invalid-cnn-dataset.yaml"
+    config_path.write_text(
+        """
+experiment_name: invalid-cnn-dataset
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
+dataset:
+  kind: sklearn_breast_cancer
+model:
+  kind: pytorch_cnn
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="pytorch_cnn currently requires"):
+        load_training_config(config_path)
+
+
+def test_load_training_config_rejects_stratified_k_fold_for_pytorch_backend(
+    tmp_path: Path,
+) -> None:
+    config_path = tmp_path / "invalid-kfold-pytorch.yaml"
+    config_path.write_text(
+        """
+experiment_name: invalid-kfold-pytorch
+tracking:
+  uri: ./mlruns-tests
+  experiment_name: config-tests
+evaluation:
+  mode: stratified_k_fold
+  folds: 5
+model:
+  kind: pytorch_mlp
+""".strip()
+    )
+
+    with pytest.raises(ValueError, match="stratified_k_fold"):
+        load_training_config(config_path)
+
+
+def test_load_dataset_supports_builtin_digits_binary_dataset() -> None:
+    dataset = load_dataset(DatasetConfig(kind="sklearn_digits_binary"))
+
+    assert dataset.dataset_name == "sklearn_digits_binary"
+    assert dataset.features.shape[1] == 64
+    assert set(dataset.target.unique()) == {0, 1}

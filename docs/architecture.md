@@ -1,98 +1,90 @@
 # Architecture Notes
 
-## Problem
+This file is the lightweight Markdown companion to the published Sphinx
+architecture page in `docs/source/architecture.rst`.
 
-Classify whether a tumor is malignant or benign using the breast cancer dataset shipped with scikit-learn while keeping the project easy to extend across classical ML and deep learning backends.
+## Core design
 
-## Architecture review
+The project keeps orchestration stable and moves variability into configuration:
 
-### What changed
+- `config.py` resolves datasets, model families, devices, defaults, and registry-declared parameter schemas
+- `data.py` loads supported datasets into pandas objects, including the built-in digits vision dataset
+- `modeling.py` owns backend-specific training plus an artifact-loader registry for serialization and inference
+- `pipeline.py` orchestrates evaluation, artifact writing, registry updates, and MLflow logging
+- `tracking.py` resolves local-vs-remote MLflow backends and manages run lifecycle
+- `tui.py` provides the operator dashboard and interactive command deck
+- `designer.py` and `model_designer.py` power the run designer and model designer workflows
 
-The original design trained a single hard-coded `LogisticRegression` pipeline directly inside `pipeline.py`.
-That was fine for a showcase, but brittle for model family growth: every new model would have forced more branching into the orchestration layer.
+## Current backend families
 
-The revised design moves model choice behind a backend contract:
+- `sklearn_logreg`
+- `sklearn_random_forest`
+- `sklearn_hist_gradient_boosting`
+- `pytorch_mlp`
+- `pytorch_cnn`
 
-- `config.py` resolves **which backend** to use
-- `modeling.py` owns backend-specific training and prediction
-- `pipeline.py` stays focused on orchestration, metrics, registry, and artifacts
-- `tracking.py` centralizes MLflow bootstrap and metadata capture
+## Storage layers
 
-### Why this is better
+The system uses three storage layers on purpose:
 
-This shape makes model expansion cheap:
+1. **Run directory** under `artifacts/runs/<run-name>/`
+   - richest per-run local artifact view
+2. **Registry** at `artifacts/registry.json`
+   - lightweight compare/dashboard summary layer
+3. **MLflow**
+   - experiment history, flattened params, scalar metrics, and logged artifacts
+
+## Evaluation modes
+
+Supported evaluation modes:
+
+- `holdout`
+- `stratified_k_fold`
+
+Current limitation: `stratified_k_fold` is implemented for scikit-learn backends
+only.
+
+## TUI architecture
+
+The interactive command deck has four top-level modes:
+
+- `runs`
+- `configs`
+- `run-designer`
+- `model-designer`
+
+The run designer owns full `TrainingConfig` drafting and launch workflows. The
+model designer owns guided editing of the `model` slice and applies the result
+back into the run designer draft.
+
+## Why this shape works
+
+This structure keeps model and dataset expansion cheap:
 
 - CLI stays stable
-- run artifact layout stays predictable
+- dataset and model capabilities live in explicit registries instead of scattered conditionals
+- artifact layout stays predictable
 - MLflow logging stays centralized
-- quality gates stay backend-agnostic
-- adding a new model mostly means adding one backend path and one config
+- dashboards and designers reuse the same config and artifact contracts
+- prediction labels come from dataset metadata rather than a hard-coded domain assumption
+- artifact loading can resolve from metadata contracts instead of trusting filename suffixes like a gullible raccoon
+- adding a backend is mostly a backend/config/docs/test exercise instead of a repo-wide branch explosion
 
-In other words: less spaghetti, fewer regrets.
+Run metadata now includes a stable artifact handshake for downstream surfaces:
 
-## Current backends
+- `contract.metadata_version`
+- `contract.task`
+- `model.artifact.filename`
+- `model.artifact.format`
+- `model.artifact.loader`
+- `model.artifact.version`
 
-### 1. `sklearn_logreg`
+## Areas to future-proof next
 
-- StandardScaler + LogisticRegression
-- artifact: `model.joblib`
-- strong interpretable baseline
-- fast CI/smoke test candidate
+The architecture is in decent shape now, but a few seams still deserve armor plating:
 
-### 2. `pytorch_mlp`
+- quality gates are metric-name driven today; if the project expands beyond binary classification, task-aware metric contracts would age better
 
-- feed-forward MLP for tabular classification
-- artifact: `model.pt`
-- device selection: `auto`, `cpu`, or `cuda`
-- trained with standardized inputs and checkpoint metadata for portable inference
+The model designer itself is no longer a per-backend pile of bespoke draft fields. It now consumes model-parameter schemas from the registry, stores generic parameter text values, and renders registry-defined controls in the TUI. That makes backend growth much less annoying and much less likely to drift across config, TUI, and validation layers.
 
-## MLflow design
-
-For local developer ergonomics, tracking uses:
-
-- SQLite tracking DB: `mlruns/mlflow.db`
-- filesystem artifact root: `mlruns/artifacts/`
-
-This avoids the deprecated pure file-store path and gives a cleaner base for future upgrades.
-
-## Deep learning base solution proposal
-
-The recommended deep-learning base for this repo is a **backend registry for tabular models** with one shared contract:
-
-1. **Config contract**
-   - `model.kind`
-   - `model.device`
-   - `model.params`
-
-2. **Backend contract**
-   - train from `X_train, y_train`
-   - save a portable model artifact
-   - expose `predict_probabilities()`
-   - emit optional feature importance / attribution summary
-
-3. **Pipeline contract**
-   - train/evaluate
-   - write metrics + metadata + config snapshot
-   - log to MLflow
-   - update registry
-
-### Recommended next deep-learning steps
-
-If you push further, the best next shape is:
-
-- keep `pytorch_mlp` as the fast baseline
-- add `pytorch_tabular_residual_mlp` for a stronger tabular default
-- optionally add a Lightning-based trainer only if experiment complexity grows
-- keep inference artifact compatibility stable per backend
-
-### Why not jump straight to a giant framework?
-
-Because this repo is still a showcase, not a wandering cathedral of abstractions. The current backend split is enough structure to scale without turning the codebase into a ritual sacrifice to "future flexibility."
-
-## Future extensions
-
-- richer calibration and threshold tuning
-- model promotion rules via MLflow model registry
-- drift monitoring / shadow evaluation
-- SHAP or Captum for explanations
-- FastAPI serving wrapper that loads either backend artifact from metadata
+A rare case where restraint beat framework cosplay.

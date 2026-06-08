@@ -6,7 +6,7 @@ from pathlib import Path
 import pandas as pd
 
 from bc_mlops_showcase.cli import main
-from bc_mlops_showcase.tui import render_dashboard_text
+from bc_mlops_showcase.tui import _load_run_metadata, render_dashboard_text
 
 
 def _seed_run(run_root: Path, run_name: str, *, model_artifact: str, with_model_card: bool) -> Path:
@@ -107,6 +107,29 @@ def test_render_dashboard_text_surfaces_branding_and_artifact_health(tmp_path: P
     assert "Artifact Health" in output
     assert "OK" in output
     assert "sklearn_logreg" in output
+
+
+def test_load_run_metadata_accepts_structured_artifact_contract(tmp_path: Path) -> None:
+    run_root = tmp_path / "artifacts" / "runs"
+    run_dir = _seed_run(
+        run_root,
+        "structured-artifact-run",
+        model_artifact="model.bundle",
+        with_model_card=True,
+    )
+    metadata = json.loads((run_dir / "metadata.json").read_text())
+    metadata["model"]["artifact"] = {
+        "filename": "model.bundle",
+        "format": "joblib_binary_classifier",
+        "loader": "joblib_binary_classifier",
+        "version": "1.0",
+    }
+    (run_dir / "metadata.json").write_text(json.dumps(metadata))
+
+    loaded = _load_run_metadata(run_dir)
+
+    assert loaded["model_artifact"] == "model.bundle"
+    assert (run_dir / str(loaded["model_artifact"])).exists()
 
 
 def test_dashboard_command_warns_when_a_model_card_is_missing(tmp_path: Path, capsys) -> None:

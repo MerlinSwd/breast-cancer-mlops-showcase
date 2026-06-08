@@ -107,3 +107,57 @@ model:
     assert fold_metrics["folds"][0]["train_rows"] > fold_metrics["folds"][0]["test_rows"]
     assert fold_metrics["summary"]["f1"]["mean"] >= 0.55
     assert fold_metrics["summary"]["f1"]["std"] >= 0.0
+
+
+def test_train_and_evaluate_supports_digits_dataset_with_cnn_backend(tmp_path: Path) -> None:
+    config_path = tmp_path / "train.yaml"
+    tracking_dir = tmp_path / "mlruns"
+    config_path.write_text(
+        f"""
+experiment_name: digits-cnn
+tracking:
+  uri: {tracking_dir}
+  experiment_name: integration-tests
+dataset:
+  kind: sklearn_digits_binary
+model:
+  kind: pytorch_cnn
+  params:
+    conv_channels: [8, 16]
+    kernel_size: 3
+    epochs: 3
+    batch_size: 16
+    learning_rate: 0.01
+    hidden_dim: 32
+""".strip()
+    )
+    config = load_training_config(config_path)
+
+    result = train_and_evaluate(config=config, output_root=tmp_path / "artifacts")
+
+    metrics = json.loads(result.metrics_path.read_text())
+    metadata = json.loads(result.metadata_path.read_text())
+    assert result.model_path.name == "model.pt"
+    assert metrics["accuracy"] >= 0.85
+    assert metrics["roc_auc"] >= 0.90
+    assert metadata["dataset"]["kind"] == "sklearn_digits_binary"
+    assert metadata["dataset"]["labels"] == {"negative": "digit_0", "positive": "digit_1"}
+    assert metadata["model"]["kind"] == "pytorch_cnn"
+    assert metadata["dataset_name"] == "sklearn_digits_binary"
+    assert metadata["train_rows"] > metadata["test_rows"]
+
+
+def test_train_and_evaluate_persists_artifact_metadata_contract(tmp_path: Path) -> None:
+    config = TrainingConfig()
+
+    result = train_and_evaluate(config=config, output_root=tmp_path)
+
+    metadata = json.loads(result.metadata_path.read_text())
+    assert metadata["contract"]["metadata_version"] == "1.0"
+    assert metadata["contract"]["task"] == "binary_classification"
+    assert metadata["model"]["artifact"] == {
+        "filename": "model.joblib",
+        "format": "joblib_binary_classifier",
+        "loader": "joblib_binary_classifier",
+        "version": "1.0",
+    }
