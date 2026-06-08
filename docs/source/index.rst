@@ -1,20 +1,62 @@
 Breast Cancer MLOps Showcase
 ============================
 
-This project demonstrates an end-to-end tabular MLOps workflow for breast cancer
-classification using a config-driven training pipeline, MLflow tracking, and
-swappable model backends.
+This project demonstrates a small but real tabular MLOps stack for binary breast
+cancer classification. The codebase centers on one idea: keep orchestration
+stable, and make datasets, model families, and operator workflows configurable.
 
-The documentation is organized around the tasks a contributor or operator will
-actually perform: install the project, run the CLI, extend the system, and
-understand how the pieces fit together.
+Use this documentation by job-to-be-done instead of wandering the repo like a
+lost intern with grep.
 
 .. toctree::
    :maxdepth: 2
-   :caption: Guide
+   :caption: Getting started
 
    installation
    usage
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Guides
+
+   datasets
+   configuration
+   dashboard
+   mlflow-and-tracking
+   artifacts
    howtos/index
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Explanation
+
    architecture
+
+.. toctree::
+   :maxdepth: 2
+   :caption: Reference
+
    api/index
+
+Suggested reading paths
+-----------------------
+
+If you are new to the project:
+
+#. :doc:`installation`
+#. :doc:`usage`
+#. :doc:`dashboard`
+
+If you want to operate trained runs:
+
+#. :doc:`usage`
+#. :doc:`artifacts`
+#. :doc:`mlflow-and-tracking`
+#. :doc:`howtos/index`
+
+If you want to extend the system:
+
+#. :doc:`configuration`
+#. :doc:`datasets`
+#. :doc:`architecture`
+#. :doc:`howtos/add-backend`

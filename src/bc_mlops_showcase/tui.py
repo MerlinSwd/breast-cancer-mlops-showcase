@@ -43,6 +43,8 @@ from .model_designer import (
     apply_model_designer_draft_to_run_draft,
     build_default_model_designer_draft,
     build_model_designer_draft_from_training_config,
+    iter_all_model_designer_fields,
+    iter_model_designer_fields,
     render_model_designer_preview_text,
     validate_model_designer_draft,
 )
@@ -529,62 +531,12 @@ class MerlinDashboardApp(App[None]):
                             allow_blank=False,
                             id="model-designer-device",
                         )
-                        yield Input(
-                            placeholder="Logreg C",
-                            id="model-designer-logreg-c",
-                        )
-                        yield Input(
-                            placeholder="Logreg max_iter",
-                            id="model-designer-logreg-max-iter",
-                        )
-                        yield Input(
-                            placeholder="RF n_estimators",
-                            id="model-designer-rf-n-estimators",
-                        )
-                        yield Input(
-                            placeholder="RF max_depth",
-                            id="model-designer-rf-max-depth",
-                        )
-                        yield Input(
-                            placeholder="RF min_samples_leaf",
-                            id="model-designer-rf-min-samples-leaf",
-                        )
-                        yield Input(
-                            placeholder="HGB learning_rate",
-                            id="model-designer-hgb-learning-rate",
-                        )
-                        yield Input(
-                            placeholder="HGB max_iter",
-                            id="model-designer-hgb-max-iter",
-                        )
-                        yield Input(
-                            placeholder="HGB max_depth",
-                            id="model-designer-hgb-max-depth",
-                        )
-                        yield Input(
-                            placeholder="HGB min_samples_leaf",
-                            id="model-designer-hgb-min-samples-leaf",
-                        )
-                        yield Input(
-                            placeholder="MLP hidden_dims",
-                            id="model-designer-mlp-hidden-dims",
-                        )
-                        yield Input(
-                            placeholder="MLP epochs",
-                            id="model-designer-mlp-epochs",
-                        )
-                        yield Input(
-                            placeholder="MLP batch_size",
-                            id="model-designer-mlp-batch-size",
-                        )
-                        yield Input(
-                            placeholder="MLP learning_rate",
-                            id="model-designer-mlp-learning-rate",
-                        )
-                        yield Input(
-                            placeholder="MLP dropout",
-                            id="model-designer-mlp-dropout",
-                        )
+                        with Vertical(id="model-designer-params"):
+                            for field in iter_all_model_designer_fields():
+                                yield Input(
+                                    placeholder=field.placeholder,
+                                    id=field.input_id,
+                                )
                 with Vertical(id="task-pane"):
                     yield Static("Task Status", classes="section-title")
                     yield Static("", id="task-status")
@@ -621,6 +573,7 @@ class MerlinDashboardApp(App[None]):
         self._set_mode("run-designer")
 
     def action_open_model_designer(self) -> None:
+        self._update_designer_draft_from_widgets()
         self._hydrate_model_designer_draft()
         self._set_mode("model-designer")
 
@@ -839,6 +792,17 @@ class MerlinDashboardApp(App[None]):
         if event.select.id in {"model-designer-kind", "model-designer-device"}:
             if self._is_syncing_model_designer:
                 return
+            if event.select.id == "model-designer-kind":
+                selected_kind = str(value)
+                if selected_kind == self.model_designer_draft.model_kind:
+                    return
+                device = str(self.query_one("#model-designer-device", Select).value)
+                self.model_designer_draft = build_default_model_designer_draft(selected_kind)
+                self.model_designer_draft.device = device
+                self.model_designer_dirty = True
+                self._refresh_model_designer_form()
+                self._refresh_overview()
+                return
             self._update_model_designer_draft_from_widgets()
             return
         if self._is_syncing_controls:
@@ -1019,46 +983,11 @@ class MerlinDashboardApp(App[None]):
         self._is_syncing_model_designer = True
         self.query_one("#model-designer-kind", Select).value = self.model_designer_draft.model_kind
         self.query_one("#model-designer-device", Select).value = self.model_designer_draft.device
-        self.query_one("#model-designer-logreg-c", Input).value = self.model_designer_draft.logreg_c
-        self.query_one(
-            "#model-designer-logreg-max-iter", Input
-        ).value = self.model_designer_draft.logreg_max_iter
-        self.query_one(
-            "#model-designer-rf-n-estimators", Input
-        ).value = self.model_designer_draft.rf_n_estimators
-        self.query_one(
-            "#model-designer-rf-max-depth", Input
-        ).value = self.model_designer_draft.rf_max_depth
-        self.query_one(
-            "#model-designer-rf-min-samples-leaf", Input
-        ).value = self.model_designer_draft.rf_min_samples_leaf
-        self.query_one(
-            "#model-designer-hgb-learning-rate", Input
-        ).value = self.model_designer_draft.hgb_learning_rate
-        self.query_one(
-            "#model-designer-hgb-max-iter", Input
-        ).value = self.model_designer_draft.hgb_max_iter
-        self.query_one(
-            "#model-designer-hgb-max-depth", Input
-        ).value = self.model_designer_draft.hgb_max_depth
-        self.query_one(
-            "#model-designer-hgb-min-samples-leaf", Input
-        ).value = self.model_designer_draft.hgb_min_samples_leaf
-        self.query_one(
-            "#model-designer-mlp-hidden-dims", Input
-        ).value = self.model_designer_draft.mlp_hidden_dims
-        self.query_one(
-            "#model-designer-mlp-epochs", Input
-        ).value = self.model_designer_draft.mlp_epochs
-        self.query_one(
-            "#model-designer-mlp-batch-size", Input
-        ).value = self.model_designer_draft.mlp_batch_size
-        self.query_one(
-            "#model-designer-mlp-learning-rate", Input
-        ).value = self.model_designer_draft.mlp_learning_rate
-        self.query_one(
-            "#model-designer-mlp-dropout", Input
-        ).value = self.model_designer_draft.mlp_dropout
+        active_fields = {field.name: field for field in iter_model_designer_fields(self.model_designer_draft.model_kind)}
+        for field in iter_all_model_designer_fields():
+            widget = self.query_one(f"#{field.input_id}", Input)
+            widget.value = self.model_designer_draft.param_values.get(field.name, "")
+            widget.display = field.name in active_fields
         self._is_syncing_model_designer = False
 
     def _set_designer_visibility(self) -> None:
@@ -1095,25 +1024,15 @@ class MerlinDashboardApp(App[None]):
     def _update_model_designer_draft_from_widgets(self) -> None:
         if self._is_syncing_model_designer:
             return
+        model_kind = str(self.query_one("#model-designer-kind", Select).value)
+        param_values = {
+            field.name: self.query_one(f"#{field.input_id}", Input).value
+            for field in iter_model_designer_fields(model_kind)
+        }
         self.model_designer_draft = ModelDesignerDraft(
-            model_kind=str(self.query_one("#model-designer-kind", Select).value),
+            model_kind=model_kind,
             device=str(self.query_one("#model-designer-device", Select).value),
-            logreg_c=self.query_one("#model-designer-logreg-c", Input).value,
-            logreg_max_iter=self.query_one("#model-designer-logreg-max-iter", Input).value,
-            rf_n_estimators=self.query_one("#model-designer-rf-n-estimators", Input).value,
-            rf_max_depth=self.query_one("#model-designer-rf-max-depth", Input).value,
-            rf_min_samples_leaf=self.query_one("#model-designer-rf-min-samples-leaf", Input).value,
-            hgb_learning_rate=self.query_one("#model-designer-hgb-learning-rate", Input).value,
-            hgb_max_iter=self.query_one("#model-designer-hgb-max-iter", Input).value,
-            hgb_max_depth=self.query_one("#model-designer-hgb-max-depth", Input).value,
-            hgb_min_samples_leaf=self.query_one(
-                "#model-designer-hgb-min-samples-leaf", Input
-            ).value,
-            mlp_hidden_dims=self.query_one("#model-designer-mlp-hidden-dims", Input).value,
-            mlp_epochs=self.query_one("#model-designer-mlp-epochs", Input).value,
-            mlp_batch_size=self.query_one("#model-designer-mlp-batch-size", Input).value,
-            mlp_learning_rate=self.query_one("#model-designer-mlp-learning-rate", Input).value,
-            mlp_dropout=self.query_one("#model-designer-mlp-dropout", Input).value,
+            param_values=param_values,
             source_name=self.model_designer_draft.source_name,
         )
         self.model_designer_dirty = True
@@ -1278,12 +1197,12 @@ class MerlinDashboardApp(App[None]):
             return
 
         if self.mode == "model-designer":
+            model_labels = ", ".join(label for label, _kind in DESIGNER_MODEL_OPTIONS)
             run_list.append(
                 ListItem(
                     Label(
-                        "Model families: Logistic regression, Random forest, Hist gradient "
-                        "boosting, PyTorch MLP. Use the model-family dropdown in the form "
-                        "to switch families."
+                        f"Model families: {model_labels}. Use the model-family dropdown in "
+                        "the form to switch families."
                     ),
                     name="",
                 )

@@ -1,69 +1,102 @@
 Usage
 =====
 
-CLI overview
-------------
-
 The package exposes a single CLI entrypoint named ``bc-mlops``.
 
 .. code-block:: bash
 
    uv run bc-mlops --help
 
-Available subcommands:
+Available subcommands
+---------------------
 
 - ``train``: train a configured backend and write run artifacts
-- ``compare``: inspect the lightweight experiment registry or print a quick text leaderboard
-- ``dashboard``: render a branded terminal dashboard for run metrics and artifact health
+- ``compare``: inspect the lightweight experiment registry
+- ``dashboard``: render the static dashboard or interactive command deck
 - ``validate``: enforce quality gates against a metrics file
 - ``predict``: score JSON or CSV payloads against a trained artifact
-- ``report``: generate a markdown model card for a run
+- ``report``: generate a markdown model card for a completed run
 
-Train a baseline model
-----------------------
+Typical workflow
+----------------
+
+1. pick a config under ``configs/``
+2. train a run with ``bc-mlops train``
+3. inspect the registry or dashboard
+4. validate the run against quality gates
+5. generate a model card
+6. run offline inference against the trained artifact
+
+Train a run
+-----------
+
+Baseline sklearn logistic regression:
 
 .. code-block:: bash
 
    uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 
-Train the PyTorch backend
--------------------------
+Baseline PyTorch MLP:
 
 .. code-block:: bash
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
-Train the harder Coimbra benchmark with random forest
------------------------------------------------------
+Digits vision CNN example:
 
 .. code-block:: bash
 
-   uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+   uv run bc-mlops train --config configs/train-digits-cnn.yaml --output-dir artifacts/runs
 
-Train the harder Coimbra benchmark with histogram gradient boosting
--------------------------------------------------------------------
-
-.. code-block:: bash
-
-   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
-
-Train the harder Coimbra benchmark with stratified k-fold evaluation
---------------------------------------------------------------------
+Coimbra random forest benchmark:
 
 .. code-block:: bash
 
-   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
+   uv run bc-mlops train \
+     --config configs/train-coimbra-random-forest.yaml \
+     --output-dir artifacts/runs
+
+Coimbra histogram gradient boosting benchmark:
+
+.. code-block:: bash
+
+   uv run bc-mlops train \
+     --config configs/train-coimbra-hist-gradient-boosting.yaml \
+     --output-dir artifacts/runs
+
+Coimbra k-fold benchmark:
+
+.. code-block:: bash
+
+   uv run bc-mlops train \
+     --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml \
+     --output-dir artifacts/runs
+
+Important evaluation note
+~~~~~~~~~~~~~~~~~~~~~~~~~
+
+``evaluation.mode: stratified_k_fold`` is currently supported only for
+scikit-learn model kinds.
 
 Compare runs
 ------------
 
+Raw registry output:
+
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
+
+Human-readable summary:
+
+.. code-block:: bash
+
    uv run bc-mlops compare --registry artifacts/registry.json --summary
 
-Open the terminal dashboard
----------------------------
+Open the dashboard
+------------------
+
+Static terminal dashboard:
 
 .. code-block:: bash
 
@@ -71,8 +104,7 @@ Open the terminal dashboard
      --registry artifacts/registry.json \
      --run-root artifacts/runs
 
-Open the interactive command deck
----------------------------------
+Interactive command deck:
 
 .. code-block:: bash
 
@@ -81,43 +113,11 @@ Open the interactive command deck
      --run-root artifacts/runs \
      --interactive
 
-The dashboard highlights the current champion run, prints a sorted leaderboard,
-checks whether each run directory still contains the expected artifacts, surfaces
-registry-versus-disk drift such as orphan run directories or stale registry
-entries, and points the operator at the next command worth running.
+See :doc:`dashboard` for the full TUI workflow, including the run designer and
+model designer.
 
-The interactive deck adds live filtering by run name or model kind, keyboard
-navigation through the run list, an overview pane for deck health and sort
-state, a richer run dossier with timestamp, train/test rows, runtime, dataset,
-MLflow identifiers, and artifact-path health, cross-validation stability
-summaries, and a detail pane with metric deltas versus the champion.
-
-It also exposes executable in-TUI operator actions for ``validate``,
-``report``, ``predict``, and ``retrain``; a menu-driven control bar for mode,
-sort order, and health triage; clickable toolbar buttons for reload, actions,
-compare, help, run design, model design, and run-level operations; a
-run-designer lane so operators can draft a config, clone an existing template,
-preview normalized YAML, validate it, save it under ``configs/``, and launch
-training from the same deck; a model-designer lane so operators can tune
-model-family hyperparameters interactively, preview the normalized ``model:``
-block, and apply the resolved model settings directly into the run designer; a
-task-status pane with success/failure feedback and action output previews;
-artifact drill-down for
-``metrics.json``, ``metadata.json``, ``MODEL_CARD.md``,
-``config.resolved.yaml``, ``fold_metrics.json``, and
-``feature_importance.csv``; a config-browser mode; a run-to-run compare mode;
-and richer triage filters for unhealthy runs, missing cards, missing models,
-missing metrics, registry drift, and cross-validation-only views.
-
-Use ``s`` to cycle sort order, ``h`` to cycle triage filters, ``tab`` to switch
-between runs, configs, the run designer, and the model designer; ``n`` to open
-the run designer directly; ``b`` to open the model designer directly; ``enter``
-to cycle details and artifacts; ``a`` to open the action catalog; ``c`` to pin
-a compare anchor; ``?`` for help; ``/`` to focus the filter; ``r`` to reload;
-and ``q`` to quit.
-
-Validate a trained run
-----------------------
+Validate a run
+--------------
 
 .. code-block:: bash
 
@@ -125,18 +125,7 @@ Validate a trained run
      --metrics artifacts/runs/<run-name>/metrics.json \
      --gates configs/quality_gates.yaml
 
-Run offline inference
----------------------
-
-.. code-block:: bash
-
-   uv run bc-mlops predict \
-     --model artifacts/runs/<run-name>/model.joblib \
-     --input sample-inputs/sample.json
-
-   uv run bc-mlops predict \
-     --model artifacts/runs/<run-name>/model.pt \
-     --input sample-inputs/sample.json
+The command exits with code ``0`` when all gates pass and ``1`` otherwise.
 
 Generate a model card
 ---------------------
@@ -147,22 +136,53 @@ Generate a model card
      --run-dir artifacts/runs/<run-name> \
      --output artifacts/runs/<run-name>/MODEL_CARD.md
 
-Generated artifacts
--------------------
+Run offline inference
+---------------------
 
-Each training run creates a timestamped directory containing:
+Single-record JSON input:
 
-- the serialized model artifact
+.. code-block:: bash
+
+   uv run bc-mlops predict \
+     --model artifacts/runs/<run-name>/model.joblib \
+     --input sample-inputs/sample.json
+
+CSV batch input:
+
+.. code-block:: bash
+
+   uv run bc-mlops predict \
+     --model artifacts/runs/<run-name>/model.joblib \
+     --input /path/to/batch.csv
+
+The command prints JSON with a ``predictions`` list containing ``index``,
+``label``, and ``probability`` fields.
+
+Where to look after training
+----------------------------
+
+Inspect these outputs under ``artifacts/runs/<run-name>/``:
+
 - ``metrics.json``
 - ``metadata.json``
-- optional ``fold_metrics.json`` with per-fold metrics plus mean/std summaries for stratified k-fold evaluation
 - ``config.resolved.yaml``
-- optional ``feature_importance.csv``
-- generated ``MODEL_CARD.md`` when requested
+- ``fold_metrics.json`` for k-fold evaluation
+- ``feature_importance.csv`` when emitted by the backend
+- ``MODEL_CARD.md`` after running ``bc-mlops report``
 
-MLflow runs are also logged under the configured tracking backend, which defaults
-to a local SQLite database plus filesystem artifact store.
+For broader context across runs, use:
 
-For small datasets such as Coimbra, set ``evaluation.mode: stratified_k_fold`` in
-the training config to score the run from out-of-fold predictions while still
-writing one final fitted sklearn artifact for downstream inference.
+- ``artifacts/registry.json``
+- ``bc-mlops compare``
+- ``bc-mlops dashboard``
+- MLflow tracking under the configured backend
+
+Related pages
+-------------
+
+- :doc:`configuration`
+- :doc:`datasets`
+- :doc:`dashboard`
+- :doc:`artifacts`
+- :doc:`mlflow-and-tracking`
+- :doc:`howtos/index`

@@ -1,0 +1,21 @@
+experiment_name: digits-cnn
+random_seed: 42
+threshold: 0.5
+tracking:
+  uri: ./mlruns
+  experiment_name: bc-mlops-showcase
+split:
+  test_size: 0.2
+  stratify: true
+dataset:
+  kind: sklearn_digits_binary
+model:
+  kind: pytorch_cnn
+  device: auto
+  params:
+    conv_channels: [8, 16]
+    kernel_size: 3
+    epochs: 8
+    batch_size: 32
+    learning_rate: 0.005
+    hidden_dim: 32

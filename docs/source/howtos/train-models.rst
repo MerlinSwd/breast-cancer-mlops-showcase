@@ -1,74 +1,121 @@
 How to train and compare models
 ===============================
 
-Train the scikit-learn baseline
--------------------------------
+This guide covers the normal operator loop: train a run, inspect the result,
+compare it with prior runs, and decide whether it deserves validation and a model
+card.
+
+Train the baseline sklearn run
+------------------------------
 
 .. code-block:: bash
 
    uv run bc-mlops train --config configs/train.yaml --output-dir artifacts/runs
 
-Train the PyTorch baseline
---------------------------
+Train the baseline PyTorch run
+------------------------------
 
 .. code-block:: bash
 
    uv run bc-mlops train --config configs/train-pytorch.yaml --output-dir artifacts/runs
 
-Train the Coimbra random-forest benchmark
------------------------------------------
+Train the digits vision CNN example
+-----------------------------------
 
 .. code-block:: bash
 
-   uv run bc-mlops train --config configs/train-coimbra-random-forest.yaml --output-dir artifacts/runs
+   uv run bc-mlops train --config configs/train-digits-cnn.yaml --output-dir artifacts/runs
 
-Train the Coimbra histogram-gradient-boosting benchmark
--------------------------------------------------------
+Train Coimbra benchmark configs
+-------------------------------
 
-.. code-block:: bash
-
-   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting.yaml --output-dir artifacts/runs
-
-Train the Coimbra histogram-gradient-boosting benchmark with stratified k-fold
-------------------------------------------------------------------------------
+Random forest:
 
 .. code-block:: bash
 
-   uv run bc-mlops train --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml --output-dir artifacts/runs
+   uv run bc-mlops train \
+     --config configs/train-coimbra-random-forest.yaml \
+     --output-dir artifacts/runs
 
-Compare all recorded runs
--------------------------
+Histogram gradient boosting:
+
+.. code-block:: bash
+
+   uv run bc-mlops train \
+     --config configs/train-coimbra-hist-gradient-boosting.yaml \
+     --output-dir artifacts/runs
+
+Histogram gradient boosting with stratified k-fold:
+
+.. code-block:: bash
+
+   uv run bc-mlops train \
+     --config configs/train-coimbra-hist-gradient-boosting-kfold.yaml \
+     --output-dir artifacts/runs
+
+Compare recorded runs
+---------------------
+
+Raw registry payload:
 
 .. code-block:: bash
 
    uv run bc-mlops compare --registry artifacts/registry.json
-   uv run bc-mlops compare --registry artifacts/registry.json --summary
 
-Validate the latest run
------------------------
+Compact human-readable summary:
 
 .. code-block:: bash
 
-   latest_run=$(find artifacts/runs -mindepth 1 -maxdepth 1 -type d | sort | tail -1)
-   uv run bc-mlops validate --metrics "$latest_run/metrics.json" --gates configs/quality_gates.yaml
+   uv run bc-mlops compare --registry artifacts/registry.json --summary
+
+Open the dashboard
+------------------
+
+Static dashboard:
+
+.. code-block:: bash
+
+   uv run bc-mlops dashboard --registry artifacts/registry.json --run-root artifacts/runs
+
+Interactive deck:
+
+.. code-block:: bash
+
+   uv run bc-mlops dashboard \
+     --registry artifacts/registry.json \
+     --run-root artifacts/runs \
+     --interactive
 
 What to inspect after training
 ------------------------------
 
-Review these files in the run directory:
+Review these files in ``artifacts/runs/<run-name>/``:
 
-- ``metadata.json`` for backend/runtime/MLflow metadata and whether the run used holdout or stratified k-fold evaluation
-- ``metrics.json`` for evaluation output
-- ``fold_metrics.json`` for per-fold metrics plus mean/std summaries when ``evaluation.mode: stratified_k_fold``
-- ``config.resolved.yaml`` for the fully resolved training config, including ``evaluation.mode``
-- ``feature_importance.csv`` when the backend emits feature importance
-- ``MODEL_CARD.md`` after running the dashboard-suggested ``bc-mlops report`` command; k-fold runs include fold-summary snippets there too
+- ``metadata.json`` for dataset, runtime, MLflow, and evaluation metadata
+- ``metrics.json`` for scalar evaluation output
+- ``config.resolved.yaml`` for the normalized config actually used
+- ``fold_metrics.json`` for per-fold metrics and summary stats when k-fold is enabled
+- ``feature_importance.csv`` when the backend emits a feature-importance view
+- ``MODEL_CARD.md`` after you run ``bc-mlops report``
 
-The dashboard and interactive command deck now surface ready-to-run operator commands for
-``bc-mlops validate`` and ``bc-mlops report`` so the next verification step is visible next to
-artifact health, champion selection, and the evaluation mode that produced a highlighted run.
-For stratified k-fold runs they also surface cross-validation stability directly from
-``fold_metrics.json`` so operators can compare per-run ``F1 σ`` values and dossier-level
-mean/std summaries without opening the raw JSON by hand. When you only need a quick terminal
-leaderboard, ``bc-mlops compare --summary`` prints rank, evaluation mode, champion deltas,
-and k-fold stability from the registry without launching the full dashboard.
+When to use which view
+----------------------
+
+Use ``compare --summary`` when you want a fast terminal ranking.
+
+Use the dashboard when you need:
+
+- richer artifact-health visibility
+- run-to-run compare mode
+- config browsing
+- run designer and model designer workflows
+- action shortcuts for validate, report, predict, and retrain
+
+Next steps
+----------
+
+After comparing runs, typical follow-up actions are:
+
+- :doc:`validate-and-report`
+- :doc:`run-inference`
+- :doc:`inspect-mlflow`

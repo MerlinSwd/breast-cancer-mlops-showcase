@@ -4,7 +4,7 @@ from pathlib import Path
 import pandas as pd
 
 from bc_mlops_showcase.cli import main
-from bc_mlops_showcase.config import load_training_config
+from bc_mlops_showcase.config import DatasetConfig, load_training_config
 from bc_mlops_showcase.data import load_dataset
 from bc_mlops_showcase.pipeline import train_and_evaluate
 
@@ -155,7 +155,7 @@ model:
 
     assert exit_code == 0
     output = json.loads(capsys.readouterr().out)
-    assert output["predictions"][0]["label"] in {"benign", "malignant"}
+    assert output["predictions"][0]["label"] in {"1.0", "2.0"}
     assert 0.0 <= output["predictions"][0]["probability"] <= 1.0
 
 
@@ -200,6 +200,107 @@ model:
             "predict",
             "--model",
             str(run_dir / "model.joblib"),
+            "--input",
+            str(payload_path),
+        ]
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["predictions"][0]["label"] in {"1.0", "2.0"}
+    assert 0.0 <= output["predictions"][0]["probability"] <= 1.0
+
+
+def test_cli_train_and_predict_support_digits_cnn_backend(tmp_path: Path, capsys) -> None:
+    config_path = tmp_path / "train.yaml"
+    output_dir = tmp_path / "artifacts"
+    config_path.write_text(
+        f"""
+experiment_name: digits-cnn
+tracking:
+  uri: {tmp_path / "mlruns"}
+  experiment_name: integration-tests
+dataset:
+  kind: sklearn_digits_binary
+model:
+  kind: pytorch_cnn
+  params:
+    conv_channels: [8, 16]
+    kernel_size: 3
+    epochs: 3
+    batch_size: 16
+    learning_rate: 0.01
+    hidden_dim: 32
+""".strip()
+    )
+
+    assert main(["train", "--config", str(config_path), "--output-dir", str(output_dir)]) == 0
+    capsys.readouterr()
+    run_dir = sorted(path for path in output_dir.iterdir() if path.is_dir())[-1]
+    assert (run_dir / "model.pt").exists()
+
+    digits = load_dataset(DatasetConfig(kind="sklearn_digits_binary"))
+    record = digits.features.iloc[0].to_dict()
+    payload_path = tmp_path / "sample.json"
+    payload_path.write_text(json.dumps(record))
+
+    exit_code = main(
+        [
+            "predict",
+            "--model",
+            str(run_dir / "model.pt"),
+            "--input",
+            str(payload_path),
+        ]
+    )
+
+    assert exit_code == 0
+    output = json.loads(capsys.readouterr().out)
+    assert output["predictions"][0]["label"] in {"digit_0", "digit_1"}
+    assert 0.0 <= output["predictions"][0]["probability"] <= 1.0
+
+
+def test_cli_predict_uses_metadata_contract_when_artifact_suffix_changes(
+    tmp_path: Path, capsys
+) -> None:
+    config_path = tmp_path / "train.yaml"
+    output_dir = tmp_path / "artifacts"
+    config_path.write_text(
+        f"""
+experiment_name: artifact-contract
+tracking:
+  uri: {tmp_path / "mlruns"}
+  experiment_name: integration-tests
+model:
+  kind: sklearn_logreg
+  params:
+    c: 1.0
+    max_iter: 200
+""".strip()
+    )
+
+    assert main(["train", "--config", str(config_path), "--output-dir", str(output_dir)]) == 0
+    capsys.readouterr()
+    run_dir = sorted(path for path in output_dir.iterdir() if path.is_dir())[-1]
+
+    original_model_path = run_dir / "model.joblib"
+    renamed_model_path = run_dir / "model.bundle"
+    original_model_path.rename(renamed_model_path)
+
+    metadata_path = run_dir / "metadata.json"
+    metadata = json.loads(metadata_path.read_text())
+    metadata["model"]["artifact"]["filename"] = renamed_model_path.name
+    metadata_path.write_text(json.dumps(metadata, indent=2))
+
+    record = load_dataset().features.iloc[0].to_dict()
+    payload_path = tmp_path / "sample.json"
+    payload_path.write_text(json.dumps(record))
+
+    exit_code = main(
+        [
+            "predict",
+            "--model",
+            str(renamed_model_path),
             "--input",
             str(payload_path),
         ]

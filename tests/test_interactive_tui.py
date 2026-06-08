@@ -809,9 +809,9 @@ def test_interactive_dashboard_app_supports_model_designer_flow(tmp_path: Path) 
             await pilot.pause()
             app.query_one("#model-designer-load-defaults-button", Button).press()
             await pilot.pause()
-            assert app.query_one("#model-designer-rf-n-estimators", Input).value == "200"
+            assert app.query_one("#model-designer-param-n-estimators", Input).value == "200"
 
-            app.query_one("#model-designer-rf-n-estimators", Input).value = "80"
+            app.query_one("#model-designer-param-n-estimators", Input).value = "80"
             app.query_one("#model-designer-preview-button", Button).press()
             await pilot.pause()
             assert "Normalized model preview" in str(details.render())
@@ -865,8 +865,57 @@ def test_interactive_dashboard_app_hydrates_model_designer_from_run_draft(tmp_pa
             assert app.mode == "model-designer"
             assert app.query_one("#model-designer-kind", Select).value == "sklearn_random_forest"
             assert app.query_one("#model-designer-device", Select).value == "cpu"
-            assert app.query_one("#model-designer-rf-n-estimators", Input).value == "75"
-            assert app.query_one("#model-designer-rf-max-depth", Input).value == "6"
+            assert app.query_one("#model-designer-param-n-estimators", Input).value == "75"
+            assert app.query_one("#model-designer-param-max-depth", Input).value == "6"
             assert "kind: sklearn_random_forest" in str(details.render())
+
+    asyncio.run(scenario())
+
+
+def test_model_designer_rebuilds_visible_registry_fields_when_family_changes(
+    tmp_path: Path,
+) -> None:
+    from textual.widgets import Input, Select
+
+    from bc_mlops_showcase.tui import MerlinDashboardApp
+
+    registry_path, run_root = _seed_registry(tmp_path)
+
+    async def scenario() -> None:
+        app = MerlinDashboardApp(registry_path=registry_path, run_root=run_root)
+        async with app.run_test() as pilot:
+            app.action_open_model_designer()
+            await pilot.pause()
+
+            assert app.query_one("#model-designer-param-c", Input).display is True
+            assert app.query_one("#model-designer-param-max-iter", Input).display is True
+            assert app.query_one("#model-designer-param-conv-channels", Input).display is False
+
+            kind_select = app.query_one("#model-designer-kind", Select)
+            kind_select.value = "pytorch_cnn"
+            await pilot.pause()
+
+            visible_ids = {
+                widget.id
+                for widget in app.query(Input)
+                if widget.id and widget.id.startswith("model-designer-param-") and widget.display
+            }
+            assert visible_ids == {
+                "model-designer-param-conv-channels",
+                "model-designer-param-kernel-size",
+                "model-designer-param-epochs",
+                "model-designer-param-batch-size",
+                "model-designer-param-learning-rate",
+                "model-designer-param-hidden-dim",
+            }
+            assert app.model_designer_draft.model_kind == "pytorch_cnn"
+            assert set(app.model_designer_draft.param_values) == {
+                "conv_channels",
+                "kernel_size",
+                "epochs",
+                "batch_size",
+                "learning_rate",
+                "hidden_dim",
+            }
 
     asyncio.run(scenario())

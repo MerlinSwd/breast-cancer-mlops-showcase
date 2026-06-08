@@ -14,7 +14,11 @@ from sklearn.model_selection import StratifiedKFold, cross_val_predict, train_te
 
 from .config import TrainingConfig, config_to_dict
 from .data import load_dataset
-from .modeling import train_backend
+from .modeling import (
+    ARTIFACT_METADATA_VERSION,
+    TASK_KIND_BINARY_CLASSIFICATION,
+    train_backend,
+)
 from .tracking import fail_training_run, finish_training_run, start_training_run
 
 
@@ -167,9 +171,13 @@ def _write_registry(
             "accuracy": metrics["accuracy"],
             "f1": metrics["f1"],
             "roc_auc": metrics["roc_auc"],
+            "cv_f1_std": metadata.get("fold_metrics_summary", {}).get("f1", {}).get("std"),
             "experiment_name": metadata["experiment_name"],
             "timestamp": metadata["timestamp"],
+            "dataset_kind": metadata["dataset"]["kind"],
             "model_kind": metadata["model"]["kind"],
+            "evaluation_mode": metadata["evaluation"]["mode"],
+            "evaluation_folds": metadata["evaluation"]["folds"],
             "mlflow_run_id": metadata["mlflow"]["run_id"],
         }
     )
@@ -228,6 +236,10 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
             backend.feature_importance.to_csv(feature_importance_path, index=False)
 
         metadata = {
+            "contract": {
+                "metadata_version": ARTIFACT_METADATA_VERSION,
+                "task": TASK_KIND_BINARY_CLASSIFICATION,
+            },
             "experiment_name": config.experiment_name,
             "timestamp": _timestamp(),
             "train_rows": train_rows,
@@ -245,10 +257,11 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
                 "target_column": config.dataset.target_column,
                 "positive_label": config.dataset.positive_label,
                 "drop_columns": list(config.dataset.drop_columns),
+                "labels": dataset.labels,
             },
             "model": {
                 "kind": backend.kind,
-                "artifact": model_path.name,
+                "artifact": backend.artifact_metadata(),
                 "runtime": backend.runtime,
             },
             "mlflow": {
@@ -258,6 +271,8 @@ def train_and_evaluate(config: TrainingConfig, output_root: Path) -> TrainingRes
                 "run_name": tracking.run.info.run_name,
             },
         }
+        if fold_metrics is not None:
+            metadata["fold_metrics_summary"] = fold_metrics.get("summary", {})
         metadata_path.write_text(json.dumps(metadata, indent=2))
         config_path.write_text(yaml.safe_dump(config_to_dict(config), sort_keys=False))
         mlflow_info = finish_training_run(metrics=metrics, run_dir=run_dir)

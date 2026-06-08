@@ -3,7 +3,13 @@ from pathlib import Path
 
 import pytest
 
-from bc_mlops_showcase.config import ModelConfig, TrainingConfig, load_training_config
+from bc_mlops_showcase.config import (
+    ModelConfig,
+    TrainingConfig,
+    get_default_model_params,
+    get_model_spec,
+    load_training_config,
+)
 from bc_mlops_showcase.designer import build_default_designer_draft
 from bc_mlops_showcase.model_designer import (
     apply_model_designer_draft_to_run_draft,
@@ -21,8 +27,29 @@ def test_build_default_model_designer_draft_uses_project_defaults() -> None:
 
     assert draft.model_kind == "sklearn_logreg"
     assert draft.device == "auto"
-    assert draft.logreg_c == "1.0"
-    assert draft.logreg_max_iter == "500"
+    assert draft.param_values == {"c": "1.0", "max_iter": "500"}
+
+
+def test_model_spec_defaults_are_derived_from_parameter_registry() -> None:
+    defaults = get_default_model_params("pytorch_cnn")
+    spec = get_model_spec("pytorch_cnn")
+
+    assert [param.name for param in spec.parameter_specs] == [
+        "conv_channels",
+        "kernel_size",
+        "epochs",
+        "batch_size",
+        "learning_rate",
+        "hidden_dim",
+    ]
+    assert defaults == {
+        "conv_channels": [8, 16],
+        "kernel_size": 3,
+        "epochs": 8,
+        "batch_size": 32,
+        "learning_rate": 0.005,
+        "hidden_dim": 32,
+    }
 
 
 def test_build_model_designer_draft_from_model_config_clones_rf_values() -> None:
@@ -36,9 +63,11 @@ def test_build_model_designer_draft_from_model_config_clones_rf_values() -> None
 
     assert draft.model_kind == "sklearn_random_forest"
     assert draft.device == "cpu"
-    assert draft.rf_n_estimators == "75"
-    assert draft.rf_max_depth == "6"
-    assert draft.rf_min_samples_leaf == "2"
+    assert draft.param_values == {
+        "n_estimators": "75",
+        "max_depth": "6",
+        "min_samples_leaf": "2",
+    }
     assert draft.source_name == "rf-template"
 
 
@@ -58,18 +87,22 @@ def test_build_model_designer_draft_from_training_config_uses_model_slice() -> N
 
     assert draft.model_kind == "pytorch_mlp"
     assert draft.device == "cuda"
-    assert draft.mlp_hidden_dims == "64,32"
-    assert draft.mlp_epochs == "30"
+    assert draft.param_values["hidden_dims"] == "64,32"
+    assert draft.param_values["epochs"] == "30"
     assert draft.source_name == "run-draft"
 
 
 def test_model_designer_draft_to_model_config_builds_hist_gradient_boosting() -> None:
     draft = build_default_model_designer_draft("sklearn_hist_gradient_boosting")
     draft.device = "cpu"
-    draft.hgb_learning_rate = "0.05"
-    draft.hgb_max_iter = "120"
-    draft.hgb_max_depth = "4"
-    draft.hgb_min_samples_leaf = "7"
+    draft.param_values.update(
+        {
+            "learning_rate": "0.05",
+            "max_iter": "120",
+            "max_depth": "4",
+            "min_samples_leaf": "7",
+        }
+    )
 
     config = model_designer_draft_to_model_config(draft)
 
@@ -83,7 +116,7 @@ def test_model_designer_draft_to_model_config_builds_hist_gradient_boosting() ->
 
 def test_validate_model_designer_draft_rejects_invalid_hidden_dims() -> None:
     draft = build_default_model_designer_draft("pytorch_mlp")
-    draft.mlp_hidden_dims = "64, nope"
+    draft.param_values["hidden_dims"] = "64, nope"
 
     result = validate_model_designer_draft(draft)
 
@@ -116,11 +149,54 @@ def test_load_training_config_rejects_invalid_model_device(tmp_path: Path) -> No
 
 def test_blank_max_depth_normalizes_to_none() -> None:
     draft = build_default_model_designer_draft("sklearn_random_forest")
-    draft.rf_max_depth = ""
+    draft.param_values["max_depth"] = ""
 
     config = model_designer_draft_to_model_config(draft)
 
     assert config.params["max_depth"] is None
+
+
+def test_model_designer_supports_registered_cnn_params_without_custom_draft_fields() -> None:
+    draft = build_default_model_designer_draft("pytorch_cnn")
+    draft.device = "cpu"
+    draft.param_values.update(
+        {
+            "conv_channels": "16,32",
+            "kernel_size": "5",
+            "epochs": "4",
+            "batch_size": "8",
+            "learning_rate": "0.01",
+            "hidden_dim": "64",
+        }
+    )
+
+    config = model_designer_draft_to_model_config(draft)
+
+    assert config.kind == "pytorch_cnn"
+    assert config.device == "cpu"
+    assert config.params == {
+        "conv_channels": [16, 32],
+        "kernel_size": 5,
+        "epochs": 4,
+        "batch_size": 8,
+        "learning_rate": 0.01,
+        "hidden_dim": 64,
+    }
+
+
+def test_load_training_config_rejects_unknown_model_params_for_backend(tmp_path: Path) -> None:
+    path = tmp_path / "invalid-param.yaml"
+    path.write_text(
+        "experiment_name: invalid-param\n"
+        "model:\n"
+        "  kind: sklearn_logreg\n"
+        "  params:\n"
+        "    c: 1.0\n"
+        "    nope: 123\n"
+    )
+
+    with pytest.raises(ValueError, match="unknown model params"):
+        load_training_config(path)
 
 
 def test_apply_model_designer_draft_to_run_draft_updates_only_model_slice() -> None:
@@ -131,9 +207,13 @@ def test_apply_model_designer_draft_to_run_draft_updates_only_model_slice() -> N
 
     model_draft = build_default_model_designer_draft("sklearn_random_forest")
     model_draft.device = "cpu"
-    model_draft.rf_n_estimators = "50"
-    model_draft.rf_max_depth = "8"
-    model_draft.rf_min_samples_leaf = "2"
+    model_draft.param_values.update(
+        {
+            "n_estimators": "50",
+            "max_depth": "8",
+            "min_samples_leaf": "2",
+        }
+    )
 
     updated = apply_model_designer_draft_to_run_draft(model_draft, run_draft)
 
@@ -151,7 +231,7 @@ def test_apply_model_designer_draft_to_run_draft_updates_only_model_slice() -> N
 
 def test_render_model_designer_preview_text_renders_normalized_yaml() -> None:
     draft = build_default_model_designer_draft("sklearn_random_forest")
-    draft.rf_n_estimators = "80"
+    draft.param_values["n_estimators"] = "80"
 
     preview = render_model_designer_preview_text(draft)
 
@@ -170,7 +250,7 @@ def test_apply_model_designer_draft_preserves_existing_run_metadata() -> None:
 
     model_draft = build_default_model_designer_draft("pytorch_mlp")
     model_draft.device = "cuda"
-    model_draft.mlp_hidden_dims = "128,64"
+    model_draft.param_values["hidden_dims"] = "128,64"
 
     updated = apply_model_designer_draft_to_run_draft(model_draft, run_draft)
 
