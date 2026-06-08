@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from dataclasses import dataclass
 from math import isqrt
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any
 
 import joblib
 import numpy as np
@@ -57,7 +58,9 @@ def _load_torch_checkpoint(path: Path) -> dict[str, Any]:
     return torch.load(path, map_location="cpu", weights_only=False)
 
 
-def _predict_torch_checkpoint_payload(checkpoint: dict[str, Any], records: pd.DataFrame) -> np.ndarray:
+def _predict_torch_checkpoint_payload(
+    checkpoint: dict[str, Any], records: pd.DataFrame
+) -> np.ndarray:
     predictors = {
         "pytorch_cnn": _predict_pytorch_cnn_checkpoint,
         "pytorch_mlp": _predict_pytorch_checkpoint,
@@ -128,7 +131,9 @@ def _resolve_loader_name_from_metadata(metadata: dict[str, Any] | None) -> str |
     return None
 
 
-def resolve_artifact_loader(model_path: str | Path, metadata: dict[str, Any] | None = None) -> ArtifactLoaderSpec:
+def resolve_artifact_loader(
+    model_path: str | Path, metadata: dict[str, Any] | None = None
+) -> ArtifactLoaderSpec:
     """Resolve the artifact loader from metadata first, then suffix fallback."""
 
     loader_name = _resolve_loader_name_from_metadata(metadata)

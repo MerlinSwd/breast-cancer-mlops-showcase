@@ -63,7 +63,10 @@ def predict_records(model_path: str | Path, input_path: str | Path) -> Predictio
         metadata=metadata,
     )
     negative_label, positive_label = _load_prediction_labels(model_path)
-    labels = [positive_label if probability >= 0.5 else negative_label for probability in probabilities]
+    labels = [
+        positive_label if probability >= 0.5 else negative_label
+        for probability in probabilities
+    ]
 
     predictions = [
         _build_prediction(index=index, label=label, probability=probability)

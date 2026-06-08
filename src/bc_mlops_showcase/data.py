@@ -56,13 +56,15 @@ def _infer_binary_class_labels(frame: pd.DataFrame, config: DatasetConfig) -> di
     positive = config.positive_label
     if positive not in unique_values:
         raise ValueError(
-            f"positive label {config.positive_label!r} not found in target column {config.target_column}"
+            f"positive label {config.positive_label!r} not found in target "
+            f"column {config.target_column}"
         )
 
     negative_values = [value for value in unique_values if value != positive]
     if len(unique_values) != 2 or len(negative_values) != 1:
         raise ValueError(
-            "csv_tabular_binary requires exactly two target classes so prediction labels stay well-defined"
+            "csv_tabular_binary requires exactly two target classes so "
+            "prediction labels stay well-defined"
         )
 
     return {"negative": str(negative_values[0]), "positive": str(positive)}

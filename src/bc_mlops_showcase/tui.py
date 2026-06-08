@@ -983,7 +983,12 @@ class MerlinDashboardApp(App[None]):
         self._is_syncing_model_designer = True
         self.query_one("#model-designer-kind", Select).value = self.model_designer_draft.model_kind
         self.query_one("#model-designer-device", Select).value = self.model_designer_draft.device
-        active_fields = {field.name: field for field in iter_model_designer_fields(self.model_designer_draft.model_kind)}
+        active_fields = {
+            field.name: field
+            for field in iter_model_designer_fields(
+                self.model_designer_draft.model_kind
+            )
+        }
         for field in iter_all_model_designer_fields():
             widget = self.query_one(f"#{field.input_id}", Input)
             widget.value = self.model_designer_draft.param_values.get(field.name, "")
@@ -2052,6 +2057,7 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
         fold_summary.get("roc_auc", {}) if isinstance(fold_summary.get("roc_auc", {}), dict) else {}
     )
     model = payload.get("model", {}) if isinstance(payload.get("model", {}), dict) else {}
+    artifact = model.get("artifact", {})
     runtime = model.get("runtime", {}) if isinstance(model.get("runtime", {}), dict) else {}
     dataset = payload.get("dataset", {}) if isinstance(payload.get("dataset", {}), dict) else {}
     evaluation = (
@@ -2059,7 +2065,11 @@ def _load_run_metadata(run_dir: Path) -> dict[str, object]:
     )
     mlflow = payload.get("mlflow", {}) if isinstance(payload.get("mlflow", {}), dict) else {}
     return {
-        "model_artifact": str(model.get("artifact", "model artifact")),
+        "model_artifact": (
+            str(artifact.get("filename", "model artifact"))
+            if isinstance(artifact, dict)
+            else str(artifact or "model artifact")
+        ),
         "model_kind": str(model.get("kind", "unknown")),
         "timestamp": payload.get("timestamp"),
         "experiment_name": payload.get("experiment_name"),

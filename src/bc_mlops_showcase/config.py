@@ -534,16 +534,19 @@ def _validate_dataset_model_compatibility(
     if dataset_spec.modality != model_spec.input_modality:
         if model.kind == "pytorch_cnn":
             raise ValueError(
-                "pytorch_cnn currently requires an image dataset with flattened square pixel features"
+                "pytorch_cnn currently requires an image dataset with "
+                "flattened square pixel features"
             )
         raise ValueError(
-            f"model kind {model.kind} expects {model_spec.input_modality} data, got {dataset.kind} ({dataset_spec.modality})"
+            f"model kind {model.kind} expects {model_spec.input_modality} "
+            f"data, got {dataset.kind} ({dataset_spec.modality})"
         )
 
     if evaluation.mode not in model_spec.supported_evaluation_modes:
         supported = ", ".join(model_spec.supported_evaluation_modes)
         raise ValueError(
-            f"evaluation mode {evaluation.mode} is not supported for {model.kind}; expected one of {supported}"
+            f"evaluation mode {evaluation.mode} is not supported for "
+            f"{model.kind}; expected one of {supported}"
         )
 
 
@@ -558,7 +561,10 @@ def load_training_config(path: str | Path) -> TrainingConfig:
     model = _resolve_model_config(raw.get("model"))
     evaluation = _resolve_evaluation_config(raw.get("evaluation"))
     _validate_dataset_model_compatibility(dataset=dataset, model=model, evaluation=evaluation)
-    experiment_name = raw.get("experiment_name") or get_model_spec(model.kind).default_experiment_name
+    experiment_name = (
+        raw.get("experiment_name")
+        or get_model_spec(model.kind).default_experiment_name
+    )
     return TrainingConfig(
         experiment_name=experiment_name,
         random_seed=raw.get("random_seed", default.random_seed),
