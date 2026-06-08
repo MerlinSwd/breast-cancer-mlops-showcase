@@ -27,6 +27,7 @@ single notebook that wandered into production wearing a fake moustache.
 - quality-gate validation against `metrics.json`
 - Markdown model card generation
 - offline inference from JSON or CSV
+- pull Kaggle datasets or competition files into a local workspace
 - static dashboard plus interactive Textual command deck
 - in-TUI run designer and model designer workflows
 
@@ -134,6 +135,34 @@ uv run bc-mlops predict \
   --model artifacts/runs/<run-name>/model.joblib \
   --input sample-inputs/sample.json
 ```
+
+Pull a Kaggle dataset:
+
+```bash
+uv run bc-mlops kaggle pull \
+  --resource-type dataset \
+  --handle merlinswd/breast-cancer-demo \
+  --output-dir data/external/breast-cancer-demo
+```
+
+Pull a Kaggle competition file:
+
+```bash
+uv run bc-mlops kaggle pull \
+  --resource-type competition \
+  --handle titanic \
+  --file-name train.csv \
+  --output-dir data/external/titanic
+```
+
+Authenticate Kaggle first with:
+
+```bash
+uv run kaggle auth login
+```
+
+If you need a headless flow, the current Kaggle client also supports
+`uv run kaggle auth login --no-launch-browser`.
 
 ## What training writes
 
